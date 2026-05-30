@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Users, Heart, Download, Search, X } from 'lucide-react';
+import { Users, Heart, Download, Upload, Search, X } from 'lucide-react';
 import { Movie, Rating, Recommendation, UserId, DismissedRecommendation } from './types';
 import { calculateTasteProfile, getRecommendations } from './utils';
 import { rerankWithGrok } from './grok';
@@ -26,6 +26,8 @@ import {
   loadDismissals,
   saveDismissals,
   clearGrokCache,
+  parseBackupFile,
+  applyBackup,
   type ActiveTab,
 } from './storage';
 import MovieCard from './components/MovieCard';
@@ -92,6 +94,7 @@ export default function MovieTasteApp() {
   dismissalsRef.current = dismissals;
   const cachedMoviesRef = useRef(cachedMovies);
   cachedMoviesRef.current = cachedMovies;
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const cacheMovie = useCallback((movie: Movie) => {
     setMovieCache((prev) => {
@@ -473,6 +476,40 @@ export default function MovieTasteApp() {
     linkElement.click();
   };
 
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const data = parseBackupFile(await file.text());
+      const hasExisting =
+        ratings.length > 0 || Object.keys(movieCache).length > 0 || dismissals.length > 0;
+
+      if (
+        hasExisting &&
+        !window.confirm(
+          'Import will replace your current ratings, cached movies, and dismissals. Continue?'
+        )
+      ) {
+        return;
+      }
+
+      applyBackup(data);
+      setRatings(data.ratings);
+      setMovieCache(data.movieCache);
+      setDismissals(data.dismissals);
+      setRecBatchByTab({});
+      setGrokError(null);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not import backup file');
+    }
+  };
+
   const userNames = {
     darcy: "Darcy's Taste",
     wife: "Wife's Taste",
@@ -500,6 +537,21 @@ export default function MovieTasteApp() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={handleImportFile}
+            />
+            <button
+              onClick={handleImportClick}
+              className="flex items-center gap-2 p-2.5 sm:px-4 sm:py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              aria-label="Import backup"
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">Import</span>
+            </button>
             <button
               onClick={exportData}
               className="flex items-center gap-2 p-2.5 sm:px-4 sm:py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"

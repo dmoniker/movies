@@ -115,3 +115,47 @@ export function saveDismissals(dismissals: DismissedRecommendation[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(DISMISSALS_KEY, JSON.stringify(dismissals));
 }
+
+export interface BackupData {
+  ratings: Rating[];
+  movieCache: Record<string, Movie>;
+  dismissals: DismissedRecommendation[];
+}
+
+export function parseBackupFile(content: string): BackupData {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('Backup file is not valid JSON');
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Backup file is not a valid object');
+  }
+
+  const record = parsed as Record<string, unknown>;
+
+  if (!Array.isArray(record.ratings)) {
+    throw new Error('Backup is missing ratings');
+  }
+
+  if (!record.movieCache || typeof record.movieCache !== 'object' || Array.isArray(record.movieCache)) {
+    throw new Error('Backup is missing movie cache');
+  }
+
+  return {
+    ratings: record.ratings as Rating[],
+    movieCache: record.movieCache as Record<string, Movie>,
+    dismissals: Array.isArray(record.dismissals)
+      ? (record.dismissals as DismissedRecommendation[])
+      : [],
+  };
+}
+
+export function applyBackup(data: BackupData): void {
+  saveRatings(data.ratings);
+  saveMovieCache(data.movieCache);
+  saveDismissals(data.dismissals);
+  clearGrokCache();
+}
