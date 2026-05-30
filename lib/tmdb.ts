@@ -1,0 +1,414 @@
+import { Movie, Rating, UserId } from '@/app/types';
+import { genreIdsToNames, genreNamesToIds } from '@/app/genres';
+import { calculateTasteProfile } from '@/app/utils';
+import { getTmdbApiKey } from '@/lib/env';
+
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w185';
+
+interface TmdbMovieListItem {
+  id: number;
+  title: string;
+  release_date?: string;
+  genre_ids?: number[];
+  overview?: string;
+  poster_path?: string | null;
+}
+
+interface TmdbCastMember {
+  name: string;
+}
+
+interface TmdbCrewMember {
+  name: string;
+  job: string;
+}
+
+interface TmdbMovieDetail extends TmdbMovieListItem {
+  genres?: { id: number; name: string }[];
+  credits?: {
+    cast?: TmdbCastMember[];
+    crew?: TmdbCrewMember[];
+  };
+}
+
+interface TmdbListResponse {
+  results: TmdbMovieListItem[];
+}
+
+interface TmdbPerson {
+  id: number;
+  name: string;
+  known_for_department?: string;
+  popularity?: number;
+}
+
+interface TmdbPersonSearchResponse {
+  results: TmdbPerson[];
+}
+
+interface TmdbCreditEntry {
+  id: number;
+  title: string;
+  release_date?: string;
+  genre_ids?: number[];
+  overview?: string;
+  poster_path?: string | null;
+  job?: string;
+  department?: string;
+}
+
+interface TmdbPersonCredits {
+  cast?: TmdbCreditEntry[];
+  crew?: TmdbCreditEntry[];
+}
+
+function getApiKey(): string {
+  return getTmdbApiKey();
+}
+
+async function tmdbFetch<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+  const url = new URL(`${TMDB_BASE}${path}`);
+  url.searchParams.set('api_key', getApiKey());
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error(`TMDB request failed (${response.status})`);
+  }
+  return response.json() as Promise<T>;
+}
+
+function yearFromReleaseDate(releaseDate?: string): number {
+  if (!releaseDate) return new Date().getFullYear();
+  const year = Number.parseInt(releaseDate.slice(0, 4), 10);
+  return Number.isFinite(year) ? year : new Date().getFullYear();
+}
+
+function mapListItem(movie: TmdbMovieListItem): Movie {
+  const genreIds = movie.genre_ids ?? [];
+  return {
+    id: String(movie.id),
+    title: movie.title,
+    year: yearFromReleaseDate(movie.release_date),
+    genres: genreIdsToNames(genreIds),
+    genreIds,
+    director: '',
+    actors: [],
+    poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : undefined,
+    description: movie.overview || '',
+  };
+}
+
+function mapDetail(movie: TmdbMovieDetail): Movie {
+  const genreIds = movie.genres?.map((g) => g.id) ?? movie.genre_ids ?? [];
+  const director =
+    movie.credits?.crew?.find((member) => member.job === 'Director')?.name ?? '';
+  const actors = movie.credits?.cast?.slice(0, 5).map((member) => member.name) ?? [];
+
+  return {
+    id: String(movie.id),
+    title: movie.title,
+    year: yearFromReleaseDate(movie.release_date),
+    genres: movie.genres?.map((g) => g.name) ?? genreIdsToNames(genreIds),
+    genreIds,
+    director,
+    actors,
+    poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : undefined,
+    description: movie.overview || '',
+  };
+}
+
+export async function fetchPopularMovies(page = 1): Promise<Movie[]> {
+  const data = await tmdbFetch<TmdbListResponse>('/movie/popular', {
+    page: String(page),
+  });
+  return data.results.map(mapListItem);
+}
+
+function normalizeSearchText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function namePartMatches(part: string, queryPart: string): boolean {
+  return part === queryPart || part.startsWith(queryPart) || queryPart.startsWith(part);
+}
+
+function scorePersonMatch(person: TmdbPerson, query: string): number {
+  const normalizedQuery = normalizeSearchText(query);
+  const normalizedName = normalizeSearchText(person.name);
+  if (!normalizedQuery || !normalizedName) return 0;
+
+  const queryParts = normalizedQuery.split(' ').filter(Boolean);
+  const nameParts = normalizedName.split(' ').filter(Boolean);
+  const firstName = nameParts[0] ?? '';
+  const lastName = nameParts[nameParts.length - 1] ?? '';
+  let score = 0;
+
+  if (normalizedName === normalizedQuery) {
+    score = 100;
+  }
+
+  if (queryParts.length >= 2) {
+    const allPartsMatch = queryParts.every((queryPart) =>
+      nameParts.some((namePart) => namePartMatches(namePart, queryPart))
+    );
+    if (allPartsMatch) {
+      score = Math.max(score, 95);
+    }
+  }
+
+  if (queryParts.length === 1) {
+    const queryPart = queryParts[0];
+    const matchesLast = namePartMatches(lastName, queryPart);
+    const matchesFirst = namePartMatches(firstName, queryPart);
+    const matchesAny = nameParts.some((namePart) => namePartMatches(namePart, queryPart));
+
+    if (matchesLast && matchesFirst) {
+      score = Math.max(score, 94);
+    } else if (matchesLast) {
+      score = Math.max(score, 90);
+    } else if (matchesFirst) {
+      score = Math.max(score, 88);
+    } else if (matchesAny) {
+      score = Math.max(score, 84);
+    }
+  }
+
+  if (normalizedName.includes(normalizedQuery)) {
+    score = Math.max(score, 78);
+  }
+
+  if (person.known_for_department === 'Directing') {
+    score += 25;
+  }
+
+  score += Math.min((person.popularity ?? 0) / 5, 20);
+
+  return score;
+}
+
+function mapDirectorCredit(credit: TmdbCreditEntry, directorName: string): Movie {
+  const genreIds = credit.genre_ids ?? [];
+  return {
+    id: String(credit.id),
+    title: credit.title,
+    year: yearFromReleaseDate(credit.release_date),
+    genres: genreIdsToNames(genreIds),
+    genreIds,
+    director: directorName,
+    actors: [],
+    poster: credit.poster_path ? `${TMDB_IMAGE_BASE}${credit.poster_path}` : undefined,
+    description: credit.overview || '',
+  };
+}
+
+async function searchPeople(query: string): Promise<TmdbPerson[]> {
+  const data = await tmdbFetch<TmdbPersonSearchResponse>('/search/person', {
+    query,
+    include_adult: 'false',
+  });
+  return data.results;
+}
+
+async function fetchMoviesByDirector(personId: number, directorName: string): Promise<Movie[]> {
+  const data = await tmdbFetch<TmdbPersonCredits>(`/person/${personId}/movie_credits`);
+
+  return (data.crew ?? [])
+    .filter((credit) => credit.job === 'Director' && credit.title)
+    .map((credit) => mapDirectorCredit(credit, directorName))
+    .sort((a, b) => b.year - a.year);
+}
+
+async function searchByTitle(query: string, page = 1): Promise<Movie[]> {
+  const data = await tmdbFetch<TmdbListResponse>('/search/movie', {
+    query,
+    page: String(page),
+    include_adult: 'false',
+  });
+  return data.results.map(mapListItem);
+}
+
+async function getDirectorMatches(query: string) {
+  const people = await searchPeople(query);
+  return people
+    .map((person) => ({ person, score: scorePersonMatch(person, query) }))
+    .filter(({ score, person }) => score >= 60 && person.known_for_department === 'Directing')
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 1);
+}
+
+async function searchByDirector(query: string): Promise<{ movies: Movie[]; matchedDirector?: string }> {
+  const matches = await getDirectorMatches(query);
+  if (matches.length === 0) {
+    return { movies: [] };
+  }
+
+  const filmographies = await Promise.all(
+    matches.map(({ person }) => fetchMoviesByDirector(person.id, person.name))
+  );
+
+  const merged = new Map<string, Movie>();
+  for (const movies of filmographies) {
+    for (const movie of movies) {
+      merged.set(movie.id, movie);
+    }
+  }
+
+  return {
+    movies: Array.from(merged.values()).sort((a, b) => b.year - a.year),
+    matchedDirector: matches[0].person.name,
+  };
+}
+
+export type SearchMode = 'title' | 'director' | 'all';
+
+export interface SearchResult {
+  movies: Movie[];
+  matchedDirector?: string;
+}
+
+export async function searchCatalog(query: string, mode: SearchMode = 'title'): Promise<SearchResult> {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return { movies: [] };
+  }
+
+  if (mode === 'title') {
+    return { movies: await searchByTitle(trimmed) };
+  }
+
+  if (mode === 'director') {
+    return searchByDirector(trimmed);
+  }
+
+  const [titleResults, matches] = await Promise.all([
+    searchByTitle(trimmed),
+    getDirectorMatches(trimmed),
+  ]);
+
+  const merged = new Map<string, Movie>();
+  for (const movie of titleResults) {
+    merged.set(movie.id, movie);
+  }
+
+  const strongMatch = matches.find(({ score }) => score >= 80);
+  let matchedDirector: string | undefined;
+
+  if (strongMatch) {
+    matchedDirector = strongMatch.person.name;
+    const directorMovies = await fetchMoviesByDirector(
+      strongMatch.person.id,
+      strongMatch.person.name
+    );
+    for (const movie of directorMovies) {
+      if (!merged.has(movie.id)) {
+        merged.set(movie.id, movie);
+      }
+    }
+  }
+
+  return {
+    movies: Array.from(merged.values()),
+    matchedDirector,
+  };
+}
+
+/** @deprecated Use searchCatalog */
+export async function searchMovies(query: string, mode: SearchMode = 'title'): Promise<Movie[]> {
+  const result = await searchCatalog(query, mode);
+  return result.movies;
+}
+
+export async function enrichMoviesWithDirectors(movies: Movie[], limit = 20): Promise<Movie[]> {
+  const toEnrich = movies.filter((movie) => !movie.director).slice(0, limit);
+  if (toEnrich.length === 0) return movies;
+
+  const enriched = await Promise.all(
+    toEnrich.map((movie) =>
+      fetchMovieDetails(movie.id).catch(() => movie)
+    )
+  );
+
+  const enrichedById = new Map(enriched.map((movie) => [movie.id, movie]));
+  return movies.map((movie) => enrichedById.get(movie.id) ?? movie);
+}
+
+export async function fetchMovieDetails(movieId: string): Promise<Movie> {
+  const data = await tmdbFetch<TmdbMovieDetail>(`/movie/${movieId}`, {
+    append_to_response: 'credits',
+  });
+  return mapDetail(data);
+}
+
+export async function fetchDiscoverMovies(
+  genreIds: number[],
+  excludeIds: Set<string>,
+  page = 1
+): Promise<Movie[]> {
+  if (genreIds.length === 0) {
+    return fetchPopularMovies(page);
+  }
+
+  const data = await tmdbFetch<TmdbListResponse>('/discover/movie', {
+    with_genres: genreIds.slice(0, 3).join(','),
+    sort_by: 'vote_average.desc',
+    'vote_count.gte': '200',
+    page: String(page),
+  });
+
+  return data.results.map(mapListItem).filter((movie) => !excludeIds.has(movie.id));
+}
+
+async function fetchSimilarMovies(movieId: string): Promise<Movie[]> {
+  const data = await tmdbFetch<TmdbListResponse>(`/movie/${movieId}/recommendations`);
+  return data.results.slice(0, 6).map(mapListItem);
+}
+
+export async function fetchRecommendationCandidates(
+  ratings: Rating[],
+  cachedMovies: Movie[],
+  userId: UserId,
+  otherUserId?: UserId
+): Promise<Movie[]> {
+  const profile = calculateTasteProfile(ratings, cachedMovies, userId);
+  const ratedIds = new Set(
+    ratings.filter((r) => r.userId === userId).map((r) => r.movieId)
+  );
+
+  const topGenreIds = Object.entries(profile.genrePrefs)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3)
+    .flatMap(([name]) => genreNamesToIds([name]));
+
+  const discoverMovies = await fetchDiscoverMovies(topGenreIds, ratedIds);
+
+  const userRatings = ratings
+    .filter((r) => r.userId === userId && r.seen)
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, 2);
+
+  const similarBatches = await Promise.all(
+    userRatings.map((rating) => fetchSimilarMovies(rating.movieId))
+  );
+
+  const merged = new Map<string, Movie>();
+  for (const movie of [...discoverMovies, ...similarBatches.flat()]) {
+    if (!ratedIds.has(movie.id)) {
+      merged.set(movie.id, movie);
+    }
+  }
+
+  if (otherUserId) {
+    const otherRatedIds = new Set(
+      ratings.filter((r) => r.userId === otherUserId).map((r) => r.movieId)
+    );
+    for (const id of otherRatedIds) {
+      merged.delete(id);
+    }
+  }
+
+  return Array.from(merged.values());
+}

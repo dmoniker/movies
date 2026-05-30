@@ -1,14 +1,12 @@
 {
   "name": "movie-taste-app",
-  "homepage": "https://dmoniker.github.io/movies",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "deploy": "npm run build && gh-pages --nojekyll -d out"
+    "lint": "eslint"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
@@ -25,7 +23,6 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
-    "gh-pages": "^6.3.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -3,6 +3,7 @@ export interface Movie {
   title: string;
   year: number;
   genres: string[];
+  genreIds?: number[];
   director: string;
   actors: string[];
   poster?: string;
@@ -12,8 +13,9 @@ export interface Movie {
 export interface Rating {
   movieId: string;
   userId: 'darcy' | 'wife';
-  rating: number; // 1-10
+  rating: number; // 1-10, 0 when unrated
   seen: boolean;
+  wantToSee?: boolean;
   notes?: string;
   dateRated: string;
 }
@@ -36,3 +38,12 @@ export interface Recommendation {
 }
 
 export type UserId = 'darcy' | 'wife';
+
+export interface DismissedRecommendation {
+  movieId: string;
+  userId: UserId;
+  title: string;
+  tags: string[];
+  note?: string;
+  dateDismissed: string;
+}

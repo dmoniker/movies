@@ -27,13 +27,13 @@ export default function TasteRadar({ profile, title }: TasteRadarProps) {
   }
 
   return (
-    <div className="h-64 w-full">
+    <div className="h-52 sm:h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={topGenres}>
+        <RadarChart cx="50%" cy="50%" outerRadius="75%" data={topGenres}>
           <PolarGrid stroke="#e5e5e5" />
           <PolarAngleAxis 
             dataKey="subject" 
-            tick={{ fontSize: 11, fill: '#666' }}
+            tick={{ fontSize: 10, fill: '#666' }}
           />
           <PolarRadiusAxis 
             angle={90} 

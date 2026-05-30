@@ -1,5 +1,4 @@
 import { Movie, Rating, TasteProfile, Recommendation, UserId } from './types';
-import { seedMovies } from './seed';
 
 export function calculateTasteProfile(ratings: Rating[], movies: Movie[], userId: UserId): TasteProfile {
   const userRatings = ratings.filter(r => r.userId === userId && r.seen);
@@ -72,7 +71,8 @@ export function getRecommendations(
   ratings: Rating[],
   movies: Movie[],
   userId: UserId,
-  otherUserId?: UserId
+  otherUserId?: UserId,
+  limit = 12
 ): Recommendation[] {
   const userRatings = ratings.filter(r => r.userId === userId);
   const ratedIds = new Set(userRatings.map(r => r.movieId));
@@ -152,9 +152,5 @@ export function getRecommendations(
 
   return scored
     .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
-}
-
-export function getAllMovies(): Movie[] {
-  return [...seedMovies];
+    .slice(0, limit);
 }
