@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   basePath: '/movies',
+  assetPrefix: '/movies',
 };
 
 export default nextConfig;
