@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "deploy": "npm run build && gh-pages -d out"
+    "deploy": "npm run build && gh-pages --nojekyll -d out"
   },
   "dependencies": {
     "date-fns": "^4.4.0",

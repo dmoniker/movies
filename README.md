@@ -30,7 +30,9 @@ Open [http://localhost:3000](http://localhost:3000).
 npm run deploy
 ```
 
-This will publish the app to `https://<your-username>.github.io/movie-taste-app/`.
+This will publish the app to `https://dmoniker.github.io/movies/`.
+
+**Note:** GitHub Pages runs Jekyll by default, which ignores folders starting with `_` (like Next.js `_next/`). This project ships a `.nojekyll` file so CSS/JS assets are served correctly. After deploying, hard-refresh the site (Cmd/Ctrl + Shift + R) if styles look stale.
 
 ## Tech Stack
 

@@ -6,8 +6,10 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
-  assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH || '',
+  basePath: '/movies',
+  assetPrefix: '/movies',
+  // Critical for GitHub Pages + static export with basePath
+  // Ensures all _next/static/* assets are prefixed correctly
 };
 
 export default nextConfig;
