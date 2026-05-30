@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "Movie Taste Tracker",
   description: "Learn your movie preferences over time, track what you've seen, and get personalized + shared recommendations with your wife.",
   icons: {
-    icon: "/favicon.ico",
+    icon: `${process.env.NEXT_PUBLIC_BASE_PATH || '/movies'}/favicon.ico`,
   },
 };
 
