@@ -105,7 +105,7 @@ function mapListItem(movie: TmdbMovieListItem): Movie {
 function mapDetail(movie: TmdbMovieDetail): Movie {
   const genreIds = movie.genres?.map((g) => g.id) ?? movie.genre_ids ?? [];
   const director =
-    movie.credits?.crew?.find((member) => member.job === 'Director')?.name ?? '';
+    movie.credits?.crew?.find((member) => member.job === 'Director')?.name || 'Unknown';
   const actors = movie.credits?.cast?.slice(0, 5).map((member) => member.name) ?? [];
 
   return {

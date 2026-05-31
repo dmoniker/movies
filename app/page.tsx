@@ -50,6 +50,14 @@ const REC_BATCH_SIZE = 6;
 const CARD_SETTLE_MS = 650;
 const CARD_EXIT_MS = 300;
 
+function resolveDisplayMovie(movie: Movie, cache: Record<string, Movie>): Movie {
+  const cached = cache[movie.id];
+  if (cached?.director) {
+    return { ...movie, ...cached };
+  }
+  return movie;
+}
+
 function filterAvailableRecs(
   recs: Recommendation[],
   tab: Tab,
@@ -95,6 +103,7 @@ export default function MovieTasteApp() {
   const cachedMoviesRef = useRef(cachedMovies);
   cachedMoviesRef.current = cachedMovies;
   const importInputRef = useRef<HTMLInputElement>(null);
+  const pendingDirectorFetches = useRef(new Set<string>());
 
   const cacheMovie = useCallback((movie: Movie) => {
     setMovieCache((prev) => {
@@ -196,20 +205,6 @@ export default function MovieTasteApp() {
         ? 'Search by director name…'
         : 'Search titles and directors…';
 
-  useEffect(() => {
-    if (!apiConfig.tmdb) return;
-
-    const ratedIds = [...new Set(ratings.map((r) => r.movieId))];
-    for (const movieId of ratedIds) {
-      const cached = movieCache[movieId];
-      if (!cached?.director) {
-        fetchMovieDetails(movieId)
-          .then(cacheMovie)
-          .catch(() => undefined);
-      }
-    }
-  }, [ratings, movieCache, cacheMovie, apiConfig.tmdb]);
-
   const loadRecBatch = useCallback(async () => {
     if (!apiConfig.tmdb) return;
 
@@ -281,10 +276,27 @@ export default function MovieTasteApp() {
         }
       }
 
-      const filtered = filterAvailableRecs(batch, tab, currentRatings, currentDismissals).slice(
+      let filtered = filterAvailableRecs(batch, tab, currentRatings, currentDismissals).slice(
         0,
         REC_BATCH_SIZE
       );
+      if (filtered.length > 0) {
+        try {
+          const enrichedMovies = await enrichMoviesWithDirectors(filtered.map((rec) => rec.movie));
+          const enrichedById = new Map(enrichedMovies.map((movie) => [movie.id, movie]));
+          filtered = filtered.map((rec) => ({
+            ...rec,
+            movie: enrichedById.get(rec.movie.id) ?? rec.movie,
+          }));
+          for (const rec of filtered) {
+            if (rec.movie.director) {
+              cacheMovie(rec.movie);
+            }
+          }
+        } catch {
+          // Keep recommendations even if director enrichment fails.
+        }
+      }
       setBatchUsedGrok(usedGrok);
       setRecBatchByTab((prev) => ({ ...prev, [tab]: filtered }));
     } catch {
@@ -292,7 +304,7 @@ export default function MovieTasteApp() {
     } finally {
       setRecBatchLoading(false);
     }
-  }, [activeTab, apiConfig.tmdb, apiConfig.xai]);
+  }, [activeTab, apiConfig.tmdb, apiConfig.xai, cacheMovie]);
 
   const loadRecBatchRef = useRef(loadRecBatch);
   loadRecBatchRef.current = loadRecBatch;
@@ -312,6 +324,46 @@ export default function MovieTasteApp() {
   );
 
   const displayedRecBatch = recBatchByTab[activeTab] ?? [];
+
+  useEffect(() => {
+    if (!apiConfig.tmdb) return;
+
+    const movieIds = new Set<string>();
+    for (const rating of ratings) {
+      movieIds.add(rating.movieId);
+    }
+    for (const rec of displayedRecBatch) {
+      movieIds.add(rec.movie.id);
+    }
+    if (searchTerm.trim()) {
+      for (const movie of browseMovies) {
+        movieIds.add(movie.id);
+      }
+    }
+
+    for (const movieId of movieIds) {
+      const cached = movieCache[movieId];
+      if (cached?.director || pendingDirectorFetches.current.has(movieId)) {
+        continue;
+      }
+
+      pendingDirectorFetches.current.add(movieId);
+      fetchMovieDetails(movieId)
+        .then(cacheMovie)
+        .catch(() => undefined)
+        .finally(() => {
+          pendingDirectorFetches.current.delete(movieId);
+        });
+    }
+  }, [
+    ratings,
+    displayedRecBatch,
+    browseMovies,
+    searchTerm,
+    movieCache,
+    cacheMovie,
+    apiConfig.tmdb,
+  ]);
 
   const currentProfile = activeTab === 'darcy' ? darcyProfile : wifeProfile;
 
@@ -339,7 +391,10 @@ export default function MovieTasteApp() {
     }
 
     return pool
+      .map((movie) => resolveDisplayMovie(movie, movieCache))
       .filter((movie) => {
+        if (isSearching) return true;
+
         const userRating =
           activeTab === 'shared'
             ? ratings.find((r) => r.movieId === movie.id)
@@ -355,7 +410,7 @@ export default function MovieTasteApp() {
           ? b.year - a.year
           : a.title.localeCompare(b.title)
       );
-  }, [browseMovies, cachedMovies, ratings, filterSeen, activeTab, searchTerm, searchMode]);
+  }, [browseMovies, cachedMovies, movieCache, ratings, filterSeen, activeTab, searchTerm, searchMode]);
 
   const handleRate = (
     movieId: string,
@@ -521,6 +576,8 @@ export default function MovieTasteApp() {
     wife: 'Wife',
     shared: 'Both',
   };
+
+  const isSearching = searchTerm.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
@@ -706,7 +763,8 @@ export default function MovieTasteApp() {
               </div>
             </div>
 
-            {(activeTab === 'shared' || displayedRecBatch.length > 0 || recBatchLoading) && (
+            {(activeTab === 'shared' || displayedRecBatch.length > 0 || recBatchLoading) &&
+            !isSearching ? (
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 mb-4 sm:mb-6">
                   <h2 className="text-xl sm:text-2xl font-semibold">
@@ -740,7 +798,7 @@ export default function MovieTasteApp() {
                       return (
                         <RecommendationCard
                           key={rec.movie.id}
-                          rec={rec}
+                          rec={{ ...rec, movie: resolveDisplayMovie(rec.movie, movieCache) }}
                           rating={recRating}
                           isExiting={exitingCardIds.has(rec.movie.id)}
                           onRate={handleRecRate}
@@ -752,37 +810,46 @@ export default function MovieTasteApp() {
                   </div>
                 ) : null}
               </div>
-            )}
+            ) : null}
 
             <div>
-              <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <div className="flex items-center justify-between gap-3">
+              {!isSearching ? (
+                <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-xl sm:text-2xl font-semibold flex items-center gap-2 sm:gap-3 min-w-0">
+                      <span className="truncate">{activeTab === 'shared' ? 'Shared Library' : 'Your Movies'}</span>
+                      <span className="text-sm font-normal text-zinc-400 shrink-0">({filteredMovies.length})</span>
+                    </h2>
+                  </div>
+
+                  <div className="flex gap-2 overflow-x-auto pb-0.5 -mx-1 px-1">
+                    {(['seen', 'wantToSee', 'all', 'unseen'] as const).map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setFilterSeen(f)}
+                        className={`flex-1 sm:flex-none min-w-[4.5rem] px-4 sm:px-6 py-2.5 sm:py-3 text-sm font-medium rounded-2xl sm:rounded-3xl transition-all whitespace-nowrap ${
+                          filterSeen === f
+                            ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                            : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100'
+                        }`}
+                      >
+                        {f === 'wantToSee'
+                          ? 'Want to see'
+                          : f === 'all'
+                            ? 'All'
+                            : f.charAt(0).toUpperCase() + f.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
                   <h2 className="text-xl sm:text-2xl font-semibold flex items-center gap-2 sm:gap-3 min-w-0">
-                    <span className="truncate">{activeTab === 'shared' ? 'Shared Library' : 'Your Movies'}</span>
+                    <span className="truncate">Search Results</span>
                     <span className="text-sm font-normal text-zinc-400 shrink-0">({filteredMovies.length})</span>
                   </h2>
                 </div>
-
-                <div className="flex gap-2 overflow-x-auto pb-0.5 -mx-1 px-1">
-                  {(['seen', 'wantToSee', 'all', 'unseen'] as const).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setFilterSeen(f)}
-                      className={`flex-1 sm:flex-none min-w-[4.5rem] px-4 sm:px-6 py-2.5 sm:py-3 text-sm font-medium rounded-2xl sm:rounded-3xl transition-all whitespace-nowrap ${
-                        filterSeen === f
-                          ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-                          : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100'
-                      }`}
-                    >
-                      {f === 'wantToSee'
-                        ? 'Want to see'
-                        : f === 'all'
-                          ? 'All'
-                          : f.charAt(0).toUpperCase() + f.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
 
               {catalogLoading ? (
                 <div className="text-sm text-zinc-400">Loading movies from TMDB…</div>
@@ -799,6 +866,7 @@ export default function MovieTasteApp() {
                         movie={movie}
                         rating={userRating}
                         onRate={handleRate}
+                        onWantToSee={isSearching ? handleWantToSee : undefined}
                       />
                     );
                   })}
@@ -806,15 +874,15 @@ export default function MovieTasteApp() {
               ) : (
                 <div className="bg-white dark:bg-zinc-900 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-2xl sm:rounded-3xl p-10 sm:p-16 text-center">
                   <p className="text-zinc-400">
-                    {searchTerm.trim() && searchMode === 'director' && !matchedDirector
+                    {isSearching && searchMode === 'director' && !matchedDirector
                       ? `No director found matching "${searchTerm.trim()}". Try a full name.`
-                      : filterSeen === 'seen' && !searchTerm.trim()
-                        ? "No movies marked seen yet. Search TMDB to find titles and rate what you've watched."
-                        : filterSeen === 'wantToSee' && !searchTerm.trim()
-                          ? 'Nothing on your want-to-see list. Tap Want to see on a recommendation or search for films.'
-                          : searchTerm.trim()
-                          ? 'No movies match your search.'
-                          : 'No movies match your filters.'}
+                      : isSearching
+                        ? 'No movies match your search.'
+                        : filterSeen === 'seen'
+                          ? "No movies marked seen yet. Search TMDB to find titles and rate what you've watched."
+                          : filterSeen === 'wantToSee'
+                            ? 'Nothing on your want-to-see list. Tap Want to see on a recommendation or search for films.'
+                            : 'No movies match your filters.'}
                   </p>
                 </div>
               )}

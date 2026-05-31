@@ -8,9 +8,10 @@ interface MovieCardProps {
   movie: Movie;
   rating?: Rating;
   onRate: (movieId: string, rating: number, seen: boolean, notes?: string, wantToSee?: boolean) => void;
+  onWantToSee?: (movie: Movie) => void;
 }
 
-export default function MovieCard({ movie, rating, onRate }: MovieCardProps) {
+export default function MovieCard({ movie, rating, onRate, onWantToSee }: MovieCardProps) {
   const currentRating = rating?.rating || 0;
   const isSeen = rating?.seen || false;
   const wantToSee = Boolean(rating?.wantToSee && !isSeen);
@@ -74,29 +75,45 @@ export default function MovieCard({ movie, rating, onRate }: MovieCardProps) {
           </p>
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
-            {wantToSee ? (
+            {isSeen ? (
+              <span className="flex items-center gap-1.5 px-3 py-2 sm:py-1 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                <Eye className="w-3.5 h-3.5" />
+                Seen
+                {currentRating > 0 ? (
+                  <span className="font-mono">• {currentRating}/10</span>
+                ) : null}
+              </span>
+            ) : wantToSee ? (
               <span className="flex items-center gap-1.5 px-3 py-2 sm:py-1 rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400">
                 <Bookmark className="w-3.5 h-3.5" />
                 Want to see
               </span>
+            ) : onWantToSee ? (
+              <button
+                type="button"
+                onClick={() => onWantToSee(movie)}
+                className="flex items-center gap-1.5 px-3 py-2 sm:py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors"
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+                Want to see
+              </button>
             ) : null}
-            <button
-              onClick={() => onRate(movie.id, currentRating, !isSeen, rating?.notes, false)}
-              className={`flex items-center gap-1.5 px-3 py-2 sm:py-1 rounded-lg transition-colors ${
-                isSeen 
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' 
-                  : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-              }`}
-            >
-              {isSeen ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-              {isSeen ? 'Seen' : 'Mark Seen'}
-            </button>
+            {!isSeen ? (
+              <button
+                type="button"
+                onClick={() => onRate(movie.id, currentRating, true, rating?.notes, false)}
+                className="flex items-center gap-1.5 px-3 py-2 sm:py-1 rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+                Mark Seen
+              </button>
+            ) : null}
 
-            {rating && currentRating > 0 && (
+            {isSeen && currentRating > 0 ? (
               <div className="text-zinc-400">
                 Rated <span className="font-mono text-emerald-600">{currentRating}</span>/10
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
