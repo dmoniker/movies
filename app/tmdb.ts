@@ -45,3 +45,20 @@ export async function fetchRecommendationCandidates(
     body: JSON.stringify({ ratings, cachedMovies, userId, otherUserId }),
   });
 }
+
+export interface DiscoverBrowseResult {
+  movies: Movie[];
+  page: number;
+  totalPages: number;
+  totalResults: number;
+}
+
+export async function fetchDiscoverBrowse(
+  filters: import('./tmdb-browse').TmdbBrowseFilters,
+  excludeIds: string[]
+): Promise<DiscoverBrowseResult> {
+  return apiFetch('/tmdb/discover', {
+    method: 'POST',
+    body: JSON.stringify({ filters, excludeIds }),
+  });
+}

@@ -3,10 +3,12 @@ import { Movie, Rating, Recommendation, DismissedRecommendation } from './types'
 const RATINGS_KEY = 'movieRatings';
 const MOVIE_CACHE_KEY = 'movieCache';
 const ACTIVE_TAB_KEY = 'activeTab';
+const DISCOVERY_MODE_KEY = 'discoveryMode';
 const GROK_CACHE_KEY = 'grokRecCache';
 const DISMISSALS_KEY = 'recDismissals';
 
 export type ActiveTab = 'darcy' | 'wife' | 'shared';
+export type DiscoveryMode = 'taste' | 'tmdbBrowse';
 
 export function loadRatings(): Rating[] {
   if (typeof window === 'undefined') return [];
@@ -56,6 +58,17 @@ export function loadActiveTab(): ActiveTab {
 export function saveActiveTab(tab: ActiveTab): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(ACTIVE_TAB_KEY, tab);
+}
+
+export function loadDiscoveryMode(): DiscoveryMode {
+  if (typeof window === 'undefined') return 'taste';
+  const saved = localStorage.getItem(DISCOVERY_MODE_KEY);
+  return saved === 'tmdbBrowse' ? 'tmdbBrowse' : 'taste';
+}
+
+export function saveDiscoveryMode(mode: DiscoveryMode): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(DISCOVERY_MODE_KEY, mode);
 }
 
 interface GrokCacheStore {

@@ -2,6 +2,12 @@ import { Movie, Rating, UserId } from '@/app/types';
 import { genreIdsToNames, genreNamesToIds } from '@/app/genres';
 import { calculateTasteProfile } from '@/app/utils';
 import { getTmdbApiKey } from '@/lib/env';
+import type { TmdbBrowseFilters } from '@/app/tmdb-browse';
+import {
+  MAJOR_STUDIO_IDS,
+  TMDB_KEYWORDS,
+  releaseDateGte,
+} from '@/app/tmdb-browse';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w185';
@@ -13,6 +19,9 @@ interface TmdbMovieListItem {
   genre_ids?: number[];
   overview?: string;
   poster_path?: string | null;
+  vote_average?: number;
+  vote_count?: number;
+  popularity?: number;
 }
 
 interface TmdbCastMember {
@@ -26,10 +35,21 @@ interface TmdbCrewMember {
 
 interface TmdbMovieDetail extends TmdbMovieListItem {
   genres?: { id: number; name: string }[];
+  runtime?: number;
+  budget?: number;
+  revenue?: number;
+  imdb_id?: string | null;
+  belongs_to_collection?: { id: number; name: string } | null;
   credits?: {
     cast?: TmdbCastMember[];
     crew?: TmdbCrewMember[];
   };
+}
+
+interface TmdbDiscoverResponse extends TmdbListResponse {
+  total_pages: number;
+  total_results: number;
+  page: number;
 }
 
 interface TmdbListResponse {
@@ -99,6 +119,9 @@ function mapListItem(movie: TmdbMovieListItem): Movie {
     actors: [],
     poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : undefined,
     description: movie.overview || '',
+    voteAverage: movie.vote_average,
+    voteCount: movie.vote_count,
+    releaseDate: movie.release_date,
   };
 }
 
@@ -118,6 +141,14 @@ function mapDetail(movie: TmdbMovieDetail): Movie {
     actors,
     poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : undefined,
     description: movie.overview || '',
+    voteAverage: movie.vote_average,
+    voteCount: movie.vote_count,
+    releaseDate: movie.release_date,
+    runtime: movie.runtime,
+    budget: movie.budget,
+    revenue: movie.revenue,
+    inCollection: Boolean(movie.belongs_to_collection),
+    imdbId: movie.imdb_id ?? undefined,
   };
 }
 
@@ -360,6 +391,113 @@ export async function fetchDiscoverMovies(
   });
 
   return data.results.map(mapListItem).filter((movie) => !excludeIds.has(movie.id));
+}
+
+export interface DiscoverBrowseResult {
+  movies: Movie[];
+  page: number;
+  totalPages: number;
+  totalResults: number;
+}
+
+function buildDiscoverParams(filters: TmdbBrowseFilters): Record<string, string> {
+  const params: Record<string, string> = {
+    sort_by: filters.sortBy,
+    page: String(filters.page),
+    include_adult: filters.excludeAdult ? 'false' : 'true',
+    'vote_average.gte': String(filters.minVoteAverage),
+    'vote_count.gte': String(filters.minVoteCount),
+  };
+
+  const releaseGte = releaseDateGte(filters.releaseWindow);
+  if (releaseGte) {
+    params['primary_release_date.gte'] = releaseGte;
+  }
+
+  if (filters.genreIds.length > 0) {
+    params.with_genres = filters.genreIds.join('|');
+  }
+
+  if (filters.maxRuntime !== null) {
+    params['with_runtime.lte'] = String(filters.maxRuntime);
+  }
+
+  if (filters.indieFocus) {
+    params.without_companies = MAJOR_STUDIO_IDS.join('|');
+  }
+
+  const withoutKeywords: number[] = [];
+
+  if (filters.excludeOscarNomineesAndWinners) {
+    withoutKeywords.push(TMDB_KEYWORDS.oscarWinner, TMDB_KEYWORDS.oscarNominee);
+  }
+
+  if (filters.excludeSequels) {
+    withoutKeywords.push(TMDB_KEYWORDS.sequel);
+  }
+
+  if (filters.excludeFranchise) {
+    withoutKeywords.push(TMDB_KEYWORDS.sequel, TMDB_KEYWORDS.prequel);
+  }
+
+  if (withoutKeywords.length > 0) {
+    params.without_keywords = [...new Set(withoutKeywords)].join('|');
+  }
+
+  return params;
+}
+
+async function applyPostFetchFilters(
+  movies: Movie[],
+  filters: TmdbBrowseFilters,
+  excludeIds: Set<string>
+): Promise<Movie[]> {
+  let filtered = movies.filter((movie) => !excludeIds.has(movie.id));
+
+  const needsBudgetFilter = filters.maxBudgetMillions !== null && filters.maxBudgetMillions > 0;
+  const needsCollectionFilter = filters.excludeFranchise;
+
+  if (!needsBudgetFilter && !needsCollectionFilter) {
+    return filtered;
+  }
+
+  const enriched = await Promise.all(
+    filtered.slice(0, 20).map((movie) =>
+      fetchMovieDetails(movie.id).catch(() => movie)
+    )
+  );
+  const enrichedById = new Map(enriched.map((movie) => [movie.id, movie]));
+
+  filtered = filtered
+    .map((movie) => enrichedById.get(movie.id) ?? movie)
+    .filter((movie) => {
+      if (needsCollectionFilter && movie.inCollection) return false;
+      if (needsBudgetFilter && movie.budget && movie.budget > 0) {
+        const maxBudget = filters.maxBudgetMillions! * 1_000_000;
+        if (movie.budget > maxBudget) return false;
+      }
+      return true;
+    });
+
+  return filtered;
+}
+
+export async function fetchDiscoverBrowse(
+  filters: TmdbBrowseFilters,
+  excludeIds: Set<string>
+): Promise<DiscoverBrowseResult> {
+  const params = buildDiscoverParams(filters);
+  const data = await tmdbFetch<TmdbDiscoverResponse>('/discover/movie', params);
+
+  let movies = data.results.map(mapListItem);
+  movies = await applyPostFetchFilters(movies, filters, excludeIds);
+
+  return {
+    movies,
+    page: data.page,
+    totalPages: data.total_pages,
+    totalResults: data.total_results,
+  };
 }
 
 async function fetchSimilarMovies(movieId: string): Promise<Movie[]> {

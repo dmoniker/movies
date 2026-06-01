@@ -8,6 +8,15 @@ export interface Movie {
   actors: string[];
   poster?: string;
   description?: string;
+  /** TMDB list/detail metadata for browse mode */
+  voteAverage?: number;
+  voteCount?: number;
+  releaseDate?: string;
+  runtime?: number;
+  budget?: number;
+  revenue?: number;
+  inCollection?: boolean;
+  imdbId?: string;
 }
 
 export interface Rating {
