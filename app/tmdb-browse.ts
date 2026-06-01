@@ -244,7 +244,7 @@ export const FILTER_GROUPS: FilterGroup[] = [
       {
         key: 'watchProviderIds',
         label: 'Streaming services',
-        description: 'Show titles available on any selected service',
+        description: 'Search to add services — your selections are saved',
         type: 'watchProviders',
       },
       {

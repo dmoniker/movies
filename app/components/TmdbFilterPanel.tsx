@@ -1,9 +1,14 @@
 'use client';
 
-import { ChevronDown, RotateCcw } from 'lucide-react';
+import { ChevronDown, RotateCcw, Search, X } from 'lucide-react';
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchWatchProviders, type WatchProvider } from '../tmdb';
+import {
+  loadBrowseStreamingPrefs,
+  persistStreamingSelections,
+  clearBrowseStreamingPrefs,
+} from '../storage';
 import {
   DEFAULT_BROWSE_FILTERS,
   FILTER_GROUPS,
@@ -113,6 +118,35 @@ function SliderField({
   );
 }
 
+function ProviderChip({
+  provider,
+  selected,
+  onToggle,
+}: {
+  provider: WatchProvider;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-full transition-all ${
+        selected
+          ? 'bg-violet-600 text-white'
+          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+      }`}
+    >
+      {provider.logoPath ? (
+        <span className="relative w-4 h-4 shrink-0 rounded overflow-hidden bg-zinc-200 dark:bg-zinc-700">
+          <Image src={provider.logoPath} alt="" fill className="object-cover" unoptimized />
+        </span>
+      ) : null}
+      {provider.name}
+    </button>
+  );
+}
+
 export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilterPanelProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(['hard', 'quality', 'mood', 'streaming'])
@@ -120,6 +154,10 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
   const [watchProviders, setWatchProviders] = useState<WatchProvider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(false);
   const [providersError, setProvidersError] = useState<string | null>(null);
+  const [providerSearch, setProviderSearch] = useState('');
+  const [savedProviderNames, setSavedProviderNames] = useState<Record<string, string>>(() =>
+    typeof window === 'undefined' ? {} : loadBrowseStreamingPrefs().providerNames
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -145,12 +183,67 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
     };
   }, [filters.watchRegion]);
 
+  useEffect(() => {
+    if (watchProviders.length === 0) return;
+    const names: Record<string, string> = {};
+    for (const provider of watchProviders) {
+      if (filters.watchProviderIds.includes(provider.id)) {
+        names[String(provider.id)] = provider.name;
+      }
+    }
+    if (Object.keys(names).length === 0) return;
+    setSavedProviderNames((prev) => ({ ...prev, ...names }));
+    persistStreamingSelections(filters.watchRegion, filters.watchProviderIds, names);
+  }, [watchProviders, filters.watchProviderIds, filters.watchRegion]);
+
+  const selectedProviders = useMemo((): WatchProvider[] => {
+    return filters.watchProviderIds.map((id) => {
+      const fromList = watchProviders.find((provider) => provider.id === id);
+      if (fromList) return fromList;
+      return {
+        id,
+        name: savedProviderNames[String(id)] ?? `Service ${id}`,
+      };
+    });
+  }, [filters.watchProviderIds, watchProviders, savedProviderNames]);
+
+  const searchResults = useMemo(() => {
+    const query = providerSearch.trim().toLowerCase();
+    if (!query) return [];
+    return watchProviders.filter(
+      (provider) =>
+        !filters.watchProviderIds.includes(provider.id) &&
+        provider.name.toLowerCase().includes(query)
+    );
+  }, [providerSearch, watchProviders, filters.watchProviderIds]);
+
   const update = (patch: Partial<TmdbBrowseFilters>) => {
     onChange({ ...filters, ...patch, page: 1 });
   };
 
+  const toggleProvider = (provider: WatchProvider) => {
+    const selected = filters.watchProviderIds.includes(provider.id);
+    const watchProviderIds = selected
+      ? filters.watchProviderIds.filter((id) => id !== provider.id)
+      : [...filters.watchProviderIds, provider.id];
+
+    const providerNames = { [String(provider.id)]: provider.name };
+    setSavedProviderNames((prev) => ({ ...prev, ...providerNames }));
+    persistStreamingSelections(filters.watchRegion, watchProviderIds, providerNames);
+    update({ watchProviderIds });
+  };
+
   const updateRegion = (watchRegion: string) => {
-    onChange({ ...filters, watchRegion, watchProviderIds: [], page: 1 });
+    persistStreamingSelections(filters.watchRegion, filters.watchProviderIds);
+    const ids = loadBrowseStreamingPrefs().selectionsByRegion[watchRegion] ?? [];
+    onChange({ ...filters, watchRegion, watchProviderIds: ids, page: 1 });
+    setProviderSearch('');
+  };
+
+  const clearStreamingSelections = () => {
+    persistStreamingSelections(filters.watchRegion, [], {});
+    update({ watchProviderIds: [] });
+    setProviderSearch('');
   };
 
   const toggleGroup = (id: string) => {
@@ -331,45 +424,75 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
           {field.description ? (
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">{field.description}</p>
           ) : null}
-          {providersLoading ? (
-            <p className="text-xs text-zinc-400">Loading services for {filters.watchRegion}…</p>
-          ) : providersError ? (
-            <p className="text-xs text-amber-600 dark:text-amber-400">{providersError}</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {watchProviders.map((provider) => {
-                const selected = filters.watchProviderIds.includes(provider.id);
-                return (
-                  <button
+
+          {selectedProviders.length > 0 ? (
+            <div className="mb-3">
+              <span className="text-xs uppercase tracking-widest text-zinc-400 block mb-2">
+                Selected
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {selectedProviders.map((provider) => (
+                  <ProviderChip
                     key={provider.id}
-                    type="button"
-                    onClick={() => {
-                      const watchProviderIds = selected
-                        ? filters.watchProviderIds.filter((id) => id !== provider.id)
-                        : [...filters.watchProviderIds, provider.id];
-                      update({ watchProviderIds });
-                    }}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-full transition-all ${
-                      selected
-                        ? 'bg-violet-600 text-white'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    {provider.logoPath ? (
-                      <span className="relative w-4 h-4 shrink-0 rounded overflow-hidden bg-zinc-200 dark:bg-zinc-700">
-                        <Image src={provider.logoPath} alt="" fill className="object-cover" unoptimized />
-                      </span>
-                    ) : null}
-                    {provider.name}
-                  </button>
-                );
-              })}
+                    provider={provider}
+                    selected
+                    onToggle={() => toggleProvider(provider)}
+                  />
+                ))}
+              </div>
             </div>
+          ) : null}
+
+          <div className="relative flex items-center gap-2 pl-3 pr-2 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl focus-within:border-violet-500 transition-colors">
+            <Search className="w-4 h-4 text-zinc-400 shrink-0" />
+            <input
+              type="text"
+              value={providerSearch}
+              onChange={(e) => setProviderSearch(e.target.value)}
+              placeholder="Search streaming services…"
+              className="flex-1 min-w-0 bg-transparent border-0 outline-none text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+            />
+            {providerSearch ? (
+              <button
+                type="button"
+                onClick={() => setProviderSearch('')}
+                aria-label="Clear search"
+                className="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : null}
+          </div>
+
+          {providersLoading ? (
+            <p className="text-xs text-zinc-400 mt-2">Loading services for {filters.watchRegion}…</p>
+          ) : providersError ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">{providersError}</p>
+          ) : providerSearch.trim() ? (
+            searchResults.length > 0 ? (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {searchResults.map((provider) => (
+                  <ProviderChip
+                    key={provider.id}
+                    provider={provider}
+                    selected={false}
+                    onToggle={() => toggleProvider(provider)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-400 mt-2">No services match &ldquo;{providerSearch.trim()}&rdquo;</p>
+            )
+          ) : (
+            <p className="text-xs text-zinc-400 mt-2">
+              Type to search Netflix, Prime, Disney+, and other services in {filters.watchRegion}.
+            </p>
           )}
+
           {filters.watchProviderIds.length > 0 ? (
             <button
               type="button"
-              onClick={() => update({ watchProviderIds: [] })}
+              onClick={clearStreamingSelections}
               className="mt-2 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
             >
               Clear streaming filters
@@ -438,7 +561,12 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
           {!filtersAreDefault(filters) ? (
             <button
               type="button"
-              onClick={() => onChange(DEFAULT_BROWSE_FILTERS)}
+              onClick={() => {
+                clearBrowseStreamingPrefs();
+                setSavedProviderNames({});
+                setProviderSearch('');
+                onChange(DEFAULT_BROWSE_FILTERS);
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             >
               <RotateCcw className="w-3 h-3" />

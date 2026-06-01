@@ -26,6 +26,9 @@ import {
   saveActiveTab,
   loadDiscoveryMode,
   saveDiscoveryMode,
+  loadBrowseStreamingPrefs,
+  persistStreamingSelections,
+  clearBrowseStreamingPrefs,
   loadDismissals,
   saveDismissals,
   clearGrokCache,
@@ -117,6 +120,7 @@ export default function MovieTasteApp() {
   const [browseTotalPages, setBrowseTotalPages] = useState(1);
   const [browseTotalResults, setBrowseTotalResults] = useState(0);
   const [browseLayout, setBrowseLayout] = useState<BrowseLayout>('grid');
+  const [streamingPrefsLoaded, setStreamingPrefsLoaded] = useState(false);
 
   const cachedMovies = useMemo(() => moviesFromCache(movieCache), [movieCache]);
 
@@ -148,6 +152,13 @@ export default function MovieTasteApp() {
     setActiveTab(loadActiveTab());
     setDiscoveryMode(loadDiscoveryMode());
     setDismissals(loadDismissals());
+    const streamingPrefs = loadBrowseStreamingPrefs();
+    setBrowseFilters((prev) => ({
+      ...prev,
+      watchRegion: streamingPrefs.watchRegion,
+      watchProviderIds: streamingPrefs.selectionsByRegion[streamingPrefs.watchRegion] ?? [],
+    }));
+    setStreamingPrefsLoaded(true);
     fetchApiConfig()
       .then(setApiConfig)
       .catch(() => setApiConfig({ tmdb: false, xai: false }));
@@ -160,6 +171,11 @@ export default function MovieTasteApp() {
   useEffect(() => {
     saveDiscoveryMode(discoveryMode);
   }, [discoveryMode]);
+
+  useEffect(() => {
+    if (!streamingPrefsLoaded) return;
+    persistStreamingSelections(browseFilters.watchRegion, browseFilters.watchProviderIds);
+  }, [browseFilters.watchRegion, browseFilters.watchProviderIds, streamingPrefsLoaded]);
 
   useEffect(() => {
     if (ratings.length > 0) {
@@ -349,7 +365,8 @@ export default function MovieTasteApp() {
   }, [activeTab, apiConfig.tmdb, apiConfig.xai, loadRecBatch, discoveryMode]);
 
   useEffect(() => {
-    if (!apiConfig.tmdb || discoveryMode !== 'tmdbBrowse' || searchTerm.trim()) return;
+    if (!apiConfig.tmdb || discoveryMode !== 'tmdbBrowse' || searchTerm.trim() || !streamingPrefsLoaded)
+      return;
 
     let cancelled = false;
     const userId = actionUserId(activeTab);
@@ -395,6 +412,7 @@ export default function MovieTasteApp() {
     ratings,
     searchTerm,
     cacheMovie,
+    streamingPrefsLoaded,
   ]);
 
   const darcyProfile = useMemo(

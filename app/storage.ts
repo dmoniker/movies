@@ -4,6 +4,7 @@ const RATINGS_KEY = 'movieRatings';
 const MOVIE_CACHE_KEY = 'movieCache';
 const ACTIVE_TAB_KEY = 'activeTab';
 const DISCOVERY_MODE_KEY = 'discoveryMode';
+const BROWSE_STREAMING_KEY = 'browseStreamingPrefs';
 const GROK_CACHE_KEY = 'grokRecCache';
 const DISMISSALS_KEY = 'recDismissals';
 
@@ -69,6 +70,77 @@ export function loadDiscoveryMode(): DiscoveryMode {
 export function saveDiscoveryMode(mode: DiscoveryMode): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(DISCOVERY_MODE_KEY, mode);
+}
+
+export interface BrowseStreamingPrefs {
+  watchRegion: string;
+  selectionsByRegion: Record<string, number[]>;
+  providerNames: Record<string, string>;
+}
+
+const EMPTY_STREAMING_PREFS: BrowseStreamingPrefs = {
+  watchRegion: 'US',
+  selectionsByRegion: {},
+  providerNames: {},
+};
+
+export function loadBrowseStreamingPrefs(): BrowseStreamingPrefs {
+  if (typeof window === 'undefined') return EMPTY_STREAMING_PREFS;
+  const saved = localStorage.getItem(BROWSE_STREAMING_KEY);
+  if (!saved) return EMPTY_STREAMING_PREFS;
+  try {
+    const parsed = JSON.parse(saved) as Partial<BrowseStreamingPrefs>;
+    return {
+      watchRegion: typeof parsed.watchRegion === 'string' ? parsed.watchRegion : 'US',
+      selectionsByRegion:
+        parsed.selectionsByRegion && typeof parsed.selectionsByRegion === 'object'
+          ? Object.fromEntries(
+              Object.entries(parsed.selectionsByRegion).map(([region, ids]) => [
+                region,
+                Array.isArray(ids) ? ids.filter((id): id is number => typeof id === 'number') : [],
+              ])
+            )
+          : {},
+      providerNames:
+        parsed.providerNames && typeof parsed.providerNames === 'object'
+          ? Object.fromEntries(
+              Object.entries(parsed.providerNames).filter(
+                (entry): entry is [string, string] => typeof entry[1] === 'string'
+              )
+            )
+          : {},
+    };
+  } catch {
+    return EMPTY_STREAMING_PREFS;
+  }
+}
+
+export function saveBrowseStreamingPrefs(prefs: BrowseStreamingPrefs): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(BROWSE_STREAMING_KEY, JSON.stringify(prefs));
+}
+
+export function streamingSelectionsForRegion(region: string): number[] {
+  return loadBrowseStreamingPrefs().selectionsByRegion[region] ?? [];
+}
+
+export function persistStreamingSelections(
+  region: string,
+  providerIds: number[],
+  providerNames?: Record<string, string>
+): void {
+  const prefs = loadBrowseStreamingPrefs();
+  prefs.watchRegion = region;
+  prefs.selectionsByRegion[region] = providerIds;
+  if (providerNames) {
+    prefs.providerNames = { ...prefs.providerNames, ...providerNames };
+  }
+  saveBrowseStreamingPrefs(prefs);
+}
+
+export function clearBrowseStreamingPrefs(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(BROWSE_STREAMING_KEY);
 }
 
 interface GrokCacheStore {
