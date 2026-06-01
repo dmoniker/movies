@@ -62,3 +62,14 @@ export async function fetchDiscoverBrowse(
     body: JSON.stringify({ filters, excludeIds }),
   });
 }
+
+export interface WatchProvider {
+  id: number;
+  name: string;
+  logoPath?: string;
+}
+
+export async function fetchWatchProviders(region: string): Promise<WatchProvider[]> {
+  const params = new URLSearchParams({ region });
+  return apiFetch(`/tmdb/watch-providers?${params}`);
+}

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchDiscoverBrowse } from '@/lib/tmdb';
-import { DEFAULT_BROWSE_FILTERS, type TmdbBrowseFilters } from '@/app/tmdb-browse';
+import { DEFAULT_BROWSE_FILTERS, type TmdbBrowseFilters, type WatchMonetizationType } from '@/app/tmdb-browse';
+
+const VALID_MONETIZATION: WatchMonetizationType[] = ['flatrate', 'free', 'ads', 'rent', 'buy'];
 
 function parseFilters(body: unknown): TmdbBrowseFilters {
   const input = (body && typeof body === 'object' ? body : {}) as Partial<TmdbBrowseFilters>;
@@ -10,6 +12,18 @@ function parseFilters(body: unknown): TmdbBrowseFilters {
     genreIds: Array.isArray(input.genreIds)
       ? input.genreIds.filter((id): id is number => typeof id === 'number')
       : DEFAULT_BROWSE_FILTERS.genreIds,
+    watchProviderIds: Array.isArray(input.watchProviderIds)
+      ? input.watchProviderIds.filter((id): id is number => typeof id === 'number')
+      : DEFAULT_BROWSE_FILTERS.watchProviderIds,
+    watchRegion:
+      typeof input.watchRegion === 'string' && input.watchRegion.length === 2
+        ? input.watchRegion.toUpperCase()
+        : DEFAULT_BROWSE_FILTERS.watchRegion,
+    watchMonetizationTypes: Array.isArray(input.watchMonetizationTypes)
+      ? input.watchMonetizationTypes.filter((type): type is WatchMonetizationType =>
+          VALID_MONETIZATION.includes(type as WatchMonetizationType)
+        )
+      : DEFAULT_BROWSE_FILTERS.watchMonetizationTypes,
     page: typeof input.page === 'number' && input.page > 0 ? input.page : 1,
   };
 }

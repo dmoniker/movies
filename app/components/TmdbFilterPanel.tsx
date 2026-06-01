@@ -1,13 +1,17 @@
 'use client';
 
 import { ChevronDown, RotateCcw } from 'lucide-react';
-import { useState } from 'react';
+import Image from 'next/image';
+import { useEffect, useState } from 'react';
+import { fetchWatchProviders, type WatchProvider } from '../tmdb';
 import {
   DEFAULT_BROWSE_FILTERS,
   FILTER_GROUPS,
   GENRE_OPTIONS,
+  MONETIZATION_OPTIONS,
   RELEASE_WINDOW_OPTIONS,
   SORT_OPTIONS,
+  WATCH_REGION_OPTIONS,
   filtersAreDefault,
   type TmdbBrowseFilters,
 } from '../tmdb-browse';
@@ -111,11 +115,42 @@ function SliderField({
 
 export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilterPanelProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(['hard', 'quality', 'mood'])
+    new Set(['hard', 'quality', 'mood', 'streaming'])
   );
+  const [watchProviders, setWatchProviders] = useState<WatchProvider[]>([]);
+  const [providersLoading, setProvidersLoading] = useState(false);
+  const [providersError, setProvidersError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProvidersLoading(true);
+    setProvidersError(null);
+
+    fetchWatchProviders(filters.watchRegion)
+      .then((providers) => {
+        if (!cancelled) setWatchProviders(providers);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setWatchProviders([]);
+          setProvidersError(error instanceof Error ? error.message : 'Failed to load services');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setProvidersLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.watchRegion]);
 
   const update = (patch: Partial<TmdbBrowseFilters>) => {
     onChange({ ...filters, ...patch, page: 1 });
+  };
+
+  const updateRegion = (watchRegion: string) => {
+    onChange({ ...filters, watchRegion, watchProviderIds: [], page: 1 });
   };
 
   const toggleGroup = (id: string) => {
@@ -266,6 +301,130 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
     }
   };
 
+  const renderStreamingField = (field: (typeof FILTER_GROUPS)[0]['fields'][0]) => {
+    if (field.type === 'watchRegion') {
+      return (
+        <div key={field.key}>
+          <span className="text-sm font-medium block mb-2">{field.label}</span>
+          {field.description ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">{field.description}</p>
+          ) : null}
+          <select
+            value={filters.watchRegion}
+            onChange={(e) => updateRegion(e.target.value)}
+            className="w-full sm:w-auto px-3 py-2 text-sm rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+          >
+            {WATCH_REGION_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label} ({value})
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    if (field.type === 'watchProviders') {
+      return (
+        <div key={field.key}>
+          <span className="text-sm font-medium block mb-2">{field.label}</span>
+          {field.description ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">{field.description}</p>
+          ) : null}
+          {providersLoading ? (
+            <p className="text-xs text-zinc-400">Loading services for {filters.watchRegion}…</p>
+          ) : providersError ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">{providersError}</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {watchProviders.map((provider) => {
+                const selected = filters.watchProviderIds.includes(provider.id);
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    onClick={() => {
+                      const watchProviderIds = selected
+                        ? filters.watchProviderIds.filter((id) => id !== provider.id)
+                        : [...filters.watchProviderIds, provider.id];
+                      update({ watchProviderIds });
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-full transition-all ${
+                      selected
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    {provider.logoPath ? (
+                      <span className="relative w-4 h-4 shrink-0 rounded overflow-hidden bg-zinc-200 dark:bg-zinc-700">
+                        <Image src={provider.logoPath} alt="" fill className="object-cover" unoptimized />
+                      </span>
+                    ) : null}
+                    {provider.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {filters.watchProviderIds.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => update({ watchProviderIds: [] })}
+              className="mt-2 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              Clear streaming filters
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (field.type === 'monetization') {
+      return (
+        <div key={field.key}>
+          <span className="text-sm font-medium block mb-2">{field.label}</span>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+            Only applies when streaming services are selected
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {MONETIZATION_OPTIONS.map(({ value, label }) => {
+              const selected = filters.watchMonetizationTypes.includes(value);
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={filters.watchProviderIds.length === 0}
+                  onClick={() => {
+                    const watchMonetizationTypes = selected
+                      ? filters.watchMonetizationTypes.filter((type) => type !== value)
+                      : [...filters.watchMonetizationTypes, value];
+                    update({ watchMonetizationTypes });
+                  }}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all disabled:opacity-40 ${
+                    selected
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderGroupField = (field: (typeof FILTER_GROUPS)[0]['fields'][0]) => {
+    if (field.type === 'watchRegion' || field.type === 'watchProviders' || field.type === 'monetization') {
+      return renderStreamingField(field);
+    }
+    return renderField(field);
+  };
+
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
@@ -335,7 +494,7 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
               />
             </button>
             {expandedGroups.has(group.id) ? (
-              <div className="px-4 sm:px-6 pb-4 space-y-4">{group.fields.map(renderField)}</div>
+              <div className="px-4 sm:px-6 pb-4 space-y-4">{group.fields.map(renderGroupField)}</div>
             ) : null}
           </div>
         ))}

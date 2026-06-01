@@ -34,6 +34,8 @@ export type SortBy =
   | 'vote_average.desc'
   | 'revenue.desc';
 
+export type WatchMonetizationType = 'flatrate' | 'free' | 'ads' | 'rent' | 'buy';
+
 export interface TmdbBrowseFilters {
   genreIds: number[];
   releaseWindow: ReleaseWindow;
@@ -46,6 +48,9 @@ export interface TmdbBrowseFilters {
   excludeSequels: boolean;
   excludeFranchise: boolean;
   maxBudgetMillions: number | null;
+  watchRegion: string;
+  watchProviderIds: number[];
+  watchMonetizationTypes: WatchMonetizationType[];
   sortBy: SortBy;
   page: number;
 }
@@ -62,6 +67,9 @@ export const DEFAULT_BROWSE_FILTERS: TmdbBrowseFilters = {
   excludeSequels: true,
   excludeFranchise: true,
   maxBudgetMillions: 50,
+  watchRegion: 'US',
+  watchProviderIds: [],
+  watchMonetizationTypes: ['flatrate'],
   sortBy: 'release_date.desc',
   page: 1,
 };
@@ -86,6 +94,29 @@ export const GENRE_OPTIONS = Object.entries(TMDB_GENRE_MAP).map(([id, name]) => 
   name,
 }));
 
+export const WATCH_REGION_OPTIONS: { value: string; label: string }[] = [
+  { value: 'US', label: 'United States' },
+  { value: 'CA', label: 'Canada' },
+  { value: 'GB', label: 'United Kingdom' },
+  { value: 'AU', label: 'Australia' },
+  { value: 'DE', label: 'Germany' },
+  { value: 'FR', label: 'France' },
+  { value: 'ES', label: 'Spain' },
+  { value: 'IT', label: 'Italy' },
+  { value: 'MX', label: 'Mexico' },
+  { value: 'BR', label: 'Brazil' },
+  { value: 'IN', label: 'India' },
+  { value: 'JP', label: 'Japan' },
+];
+
+export const MONETIZATION_OPTIONS: { value: WatchMonetizationType; label: string }[] = [
+  { value: 'flatrate', label: 'Subscription' },
+  { value: 'free', label: 'Free' },
+  { value: 'ads', label: 'Ad-supported' },
+  { value: 'rent', label: 'Rent' },
+  { value: 'buy', label: 'Buy' },
+];
+
 export interface FilterGroup {
   id: string;
   title: string;
@@ -97,7 +128,7 @@ export interface FilterField {
   key: keyof TmdbBrowseFilters;
   label: string;
   description?: string;
-  type: 'toggle' | 'slider' | 'select' | 'genres';
+  type: 'toggle' | 'slider' | 'select' | 'genres' | 'watchRegion' | 'watchProviders' | 'monetization';
   min?: number;
   max?: number;
   step?: number;
@@ -196,6 +227,30 @@ export const FILTER_GROUPS: FilterGroup[] = [
         key: 'excludeAdult',
         label: 'Exclude adult content',
         type: 'toggle',
+      },
+    ],
+  },
+  {
+    id: 'streaming',
+    title: 'Streaming',
+    priority: 'nice',
+    fields: [
+      {
+        key: 'watchRegion',
+        label: 'Region',
+        description: 'Availability is country-specific (via JustWatch on TMDB)',
+        type: 'watchRegion',
+      },
+      {
+        key: 'watchProviderIds',
+        label: 'Streaming services',
+        description: 'Show titles available on any selected service',
+        type: 'watchProviders',
+      },
+      {
+        key: 'watchMonetizationTypes',
+        label: 'How to watch',
+        type: 'monetization',
       },
     ],
   },

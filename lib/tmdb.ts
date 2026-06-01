@@ -444,6 +444,14 @@ function buildDiscoverParams(filters: TmdbBrowseFilters): Record<string, string>
     params.without_keywords = [...new Set(withoutKeywords)].join('|');
   }
 
+  if (filters.watchProviderIds.length > 0) {
+    params.watch_region = filters.watchRegion;
+    params.with_watch_providers = filters.watchProviderIds.join('|');
+    if (filters.watchMonetizationTypes.length > 0) {
+      params.with_watch_monetization_types = filters.watchMonetizationTypes.join('|');
+    }
+  }
+
   return params;
 }
 
@@ -498,6 +506,39 @@ export async function fetchDiscoverBrowse(
     totalPages: data.total_pages,
     totalResults: data.total_results,
   };
+}
+
+export interface WatchProvider {
+  id: number;
+  name: string;
+  logoPath?: string;
+}
+
+interface TmdbWatchProviderEntry {
+  provider_id: number;
+  provider_name: string;
+  logo_path?: string | null;
+  display_priority: number;
+}
+
+interface TmdbWatchProvidersResponse {
+  results: TmdbWatchProviderEntry[];
+}
+
+export async function fetchWatchProviders(region: string): Promise<WatchProvider[]> {
+  const data = await tmdbFetch<TmdbWatchProvidersResponse>('/watch/providers/movie', {
+    watch_region: region.toUpperCase(),
+  });
+
+  return data.results
+    .sort((a, b) => a.display_priority - b.display_priority)
+    .map((provider) => ({
+      id: provider.provider_id,
+      name: provider.provider_name,
+      logoPath: provider.logo_path
+        ? `https://image.tmdb.org/t/p/w45${provider.logo_path}`
+        : undefined,
+    }));
 }
 
 async function fetchSimilarMovies(movieId: string): Promise<Movie[]> {
