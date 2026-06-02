@@ -7,7 +7,7 @@ import { fetchWatchProviders, type WatchProvider } from '../tmdb';
 import {
   loadBrowseStreamingPrefs,
   persistStreamingSelections,
-  clearBrowseStreamingPrefs,
+  clearAllBrowsePrefs,
 } from '../storage';
 import {
   DEFAULT_BROWSE_FILTERS,
@@ -24,7 +24,6 @@ import {
 interface TmdbFilterPanelProps {
   filters: TmdbBrowseFilters;
   onChange: (filters: TmdbBrowseFilters) => void;
-  loading?: boolean;
 }
 
 const PRIORITY_STYLES = {
@@ -81,6 +80,7 @@ function SliderField({
   label,
   description,
   formatValue,
+  nullable = true,
 }: {
   value: number | null;
   onChange: (value: number | null) => void;
@@ -90,6 +90,7 @@ function SliderField({
   label: string;
   description?: string;
   formatValue?: (value: number | null) => string;
+  nullable?: boolean;
 }) {
   const display = formatValue ? formatValue(value) : value === null ? 'Any' : String(value);
 
@@ -110,7 +111,7 @@ function SliderField({
         value={value ?? min}
         onChange={(e) => {
           const next = Number(e.target.value);
-          onChange(next <= min ? null : next);
+          onChange(nullable !== false && next <= min ? null : next);
         }}
         className="w-full accent-violet-600"
       />
@@ -147,7 +148,7 @@ function ProviderChip({
   );
 }
 
-export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilterPanelProps) {
+export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(['hard', 'quality', 'mood', 'streaming'])
   );
@@ -158,6 +159,7 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
   const [savedProviderNames, setSavedProviderNames] = useState<Record<string, string>>(() =>
     typeof window === 'undefined' ? {} : loadBrowseStreamingPrefs().providerNames
   );
+  const atDefaults = filtersAreDefault(filters);
 
   useEffect(() => {
     let cancelled = false;
@@ -326,6 +328,23 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
               label={field.label}
               description={field.description}
               formatValue={(v) => (v === null ? 'Any' : `$${v}M`)}
+            />
+          );
+        }
+        if (field.key === 'oscarExcludeYears') {
+          if (!filters.excludeOscarNomineesAndWinners) return null;
+          return (
+            <SliderField
+              key={field.key}
+              value={filters.oscarExcludeYears}
+              onChange={(value) => update({ oscarExcludeYears: value ?? 1 })}
+              min={field.min ?? 1}
+              max={field.max ?? 25}
+              step={field.step ?? 1}
+              label={field.label}
+              description={field.description}
+              formatValue={(v) => `Last ${v ?? 1} years`}
+              nullable={false}
             />
           );
         }
@@ -558,24 +577,20 @@ export default function TmdbFilterPanel({ filters, onChange, loading }: TmdbFilt
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {!filtersAreDefault(filters) ? (
-            <button
-              type="button"
-              onClick={() => {
-                clearBrowseStreamingPrefs();
-                setSavedProviderNames({});
-                setProviderSearch('');
-                onChange(DEFAULT_BROWSE_FILTERS);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <RotateCcw className="w-3 h-3" />
-              Reset
-            </button>
-          ) : null}
-          {loading ? (
-            <span className="text-xs text-zinc-400 animate-pulse">Updating…</span>
-          ) : null}
+          <button
+            type="button"
+            disabled={atDefaults}
+            onClick={() => {
+              clearAllBrowsePrefs();
+              setSavedProviderNames({});
+              setProviderSearch('');
+              onChange(DEFAULT_BROWSE_FILTERS);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset
+          </button>
         </div>
       </div>
 

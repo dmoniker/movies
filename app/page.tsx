@@ -27,8 +27,10 @@ import {
   loadDiscoveryMode,
   saveDiscoveryMode,
   loadBrowseStreamingPrefs,
+  loadSavedBrowseFilters,
+  saveBrowseFilters,
   persistStreamingSelections,
-  clearBrowseStreamingPrefs,
+  clearAllBrowsePrefs,
   loadDismissals,
   saveDismissals,
   clearGrokCache,
@@ -120,7 +122,7 @@ export default function MovieTasteApp() {
   const [browseTotalPages, setBrowseTotalPages] = useState(1);
   const [browseTotalResults, setBrowseTotalResults] = useState(0);
   const [browseLayout, setBrowseLayout] = useState<BrowseLayout>('grid');
-  const [streamingPrefsLoaded, setStreamingPrefsLoaded] = useState(false);
+  const [browsePrefsLoaded, setBrowsePrefsLoaded] = useState(false);
 
   const cachedMovies = useMemo(() => moviesFromCache(movieCache), [movieCache]);
 
@@ -152,13 +154,17 @@ export default function MovieTasteApp() {
     setActiveTab(loadActiveTab());
     setDiscoveryMode(loadDiscoveryMode());
     setDismissals(loadDismissals());
+    const savedFilters = loadSavedBrowseFilters();
     const streamingPrefs = loadBrowseStreamingPrefs();
-    setBrowseFilters((prev) => ({
-      ...prev,
+    setBrowseFilters({
+      ...savedFilters,
       watchRegion: streamingPrefs.watchRegion,
-      watchProviderIds: streamingPrefs.selectionsByRegion[streamingPrefs.watchRegion] ?? [],
-    }));
-    setStreamingPrefsLoaded(true);
+      watchProviderIds:
+        streamingPrefs.selectionsByRegion[streamingPrefs.watchRegion] ??
+        savedFilters.watchProviderIds,
+      page: 1,
+    });
+    setBrowsePrefsLoaded(true);
     fetchApiConfig()
       .then(setApiConfig)
       .catch(() => setApiConfig({ tmdb: false, xai: false }));
@@ -173,9 +179,13 @@ export default function MovieTasteApp() {
   }, [discoveryMode]);
 
   useEffect(() => {
-    if (!streamingPrefsLoaded) return;
-    persistStreamingSelections(browseFilters.watchRegion, browseFilters.watchProviderIds);
-  }, [browseFilters.watchRegion, browseFilters.watchProviderIds, streamingPrefsLoaded]);
+    if (!browsePrefsLoaded) return;
+    const timer = setTimeout(() => {
+      saveBrowseFilters(browseFilters);
+      persistStreamingSelections(browseFilters.watchRegion, browseFilters.watchProviderIds);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [browseFilters, browsePrefsLoaded]);
 
   useEffect(() => {
     if (ratings.length > 0) {
@@ -365,44 +375,54 @@ export default function MovieTasteApp() {
   }, [activeTab, apiConfig.tmdb, apiConfig.xai, loadRecBatch, discoveryMode]);
 
   useEffect(() => {
-    if (!apiConfig.tmdb || discoveryMode !== 'tmdbBrowse' || searchTerm.trim() || !streamingPrefsLoaded)
+    if (!apiConfig.tmdb || discoveryMode !== 'tmdbBrowse' || searchTerm.trim() || !browsePrefsLoaded)
       return;
 
     let cancelled = false;
-    const userId = actionUserId(activeTab);
-    const excludeIds = ratings
-      .filter((r) => {
-        if (activeTab === 'shared') return r.seen || r.wantToSee;
-        return r.userId === userId && (r.seen || r.wantToSee);
-      })
-      .map((r) => r.movieId);
+    let loadingTimer: ReturnType<typeof setTimeout> | null = null;
 
-    setBrowseLoading(true);
-    fetchDiscoverBrowse(browseFilters, excludeIds)
-      .then(async (result) => {
-        if (cancelled) return;
-        const enriched = await enrichMoviesWithDirectors(result.movies);
-        if (cancelled) return;
-        setBrowseResults(enriched);
-        setBrowseTotalPages(result.totalPages);
-        setBrowseTotalResults(result.totalResults);
-        for (const movie of enriched) {
-          if (movie.director) cacheMovie(movie);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBrowseResults([]);
-          setBrowseTotalPages(1);
-          setBrowseTotalResults(0);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setBrowseLoading(false);
-      });
+    const debounceTimer = setTimeout(() => {
+      const userId = actionUserId(activeTab);
+      const excludeIds = ratings
+        .filter((r) => {
+          if (activeTab === 'shared') return r.seen || r.wantToSee;
+          return r.userId === userId && (r.seen || r.wantToSee);
+        })
+        .map((r) => r.movieId);
+
+      loadingTimer = setTimeout(() => {
+        if (!cancelled) setBrowseLoading(true);
+      }, 300);
+
+      fetchDiscoverBrowse(browseFilters, excludeIds)
+        .then(async (result) => {
+          if (cancelled) return;
+          const enriched = await enrichMoviesWithDirectors(result.movies);
+          if (cancelled) return;
+          setBrowseResults(enriched);
+          setBrowseTotalPages(result.totalPages);
+          setBrowseTotalResults(result.totalResults);
+          for (const movie of enriched) {
+            if (movie.director) cacheMovie(movie);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setBrowseResults([]);
+            setBrowseTotalPages(1);
+            setBrowseTotalResults(0);
+          }
+        })
+        .finally(() => {
+          if (loadingTimer) clearTimeout(loadingTimer);
+          if (!cancelled) setBrowseLoading(false);
+        });
+    }, 400);
 
     return () => {
       cancelled = true;
+      clearTimeout(debounceTimer);
+      if (loadingTimer) clearTimeout(loadingTimer);
     };
   }, [
     apiConfig.tmdb,
@@ -412,7 +432,7 @@ export default function MovieTasteApp() {
     ratings,
     searchTerm,
     cacheMovie,
-    streamingPrefsLoaded,
+    browsePrefsLoaded,
   ]);
 
   const darcyProfile = useMemo(
@@ -1134,11 +1154,7 @@ export default function MovieTasteApp() {
             ) : null}
 
             {discoveryMode === 'tmdbBrowse' && !isSearching ? (
-              <TmdbFilterPanel
-                filters={browseFilters}
-                onChange={setBrowseFilters}
-                loading={browseLoading}
-              />
+              <TmdbFilterPanel filters={browseFilters} onChange={setBrowseFilters} />
             ) : null}
 
             <div>

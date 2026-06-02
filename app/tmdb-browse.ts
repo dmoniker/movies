@@ -45,6 +45,7 @@ export interface TmdbBrowseFilters {
   excludeAdult: boolean;
   indieFocus: boolean;
   excludeOscarNomineesAndWinners: boolean;
+  oscarExcludeYears: number;
   excludeSequels: boolean;
   excludeFranchise: boolean;
   maxBudgetMillions: number | null;
@@ -64,6 +65,7 @@ export const DEFAULT_BROWSE_FILTERS: TmdbBrowseFilters = {
   excludeAdult: true,
   indieFocus: true,
   excludeOscarNomineesAndWinners: false,
+  oscarExcludeYears: 5,
   excludeSequels: true,
   excludeFranchise: true,
   maxBudgetMillions: 50,
@@ -143,8 +145,17 @@ export const FILTER_GROUPS: FilterGroup[] = [
       {
         key: 'excludeOscarNomineesAndWinners',
         label: 'Exclude Oscar nominees and winners',
-        description: 'Filters out Academy Award nominees and winners via TMDB keywords',
+        description: 'Applies only to films within the year window below',
         type: 'toggle',
+      },
+      {
+        key: 'oscarExcludeYears',
+        label: 'Oscar filter window',
+        description: 'Exclude Oscar titles released within this many years',
+        type: 'slider',
+        min: 1,
+        max: 25,
+        step: 1,
       },
       {
         key: 'maxBudgetMillions',
@@ -265,5 +276,36 @@ export function releaseDateGte(window: ReleaseWindow): string | undefined {
 }
 
 export function filtersAreDefault(filters: TmdbBrowseFilters): boolean {
-  return JSON.stringify(filters) === JSON.stringify(DEFAULT_BROWSE_FILTERS);
+  const { page: _page, ...current } = filters;
+  const { page: _defaultPage, ...defaults } = DEFAULT_BROWSE_FILTERS;
+  return JSON.stringify(current) === JSON.stringify(defaults);
+}
+
+const VALID_MONETIZATION: WatchMonetizationType[] = ['flatrate', 'free', 'ads', 'rent', 'buy'];
+
+export function mergeBrowseFilters(input: Partial<TmdbBrowseFilters> = {}): TmdbBrowseFilters {
+  return {
+    ...DEFAULT_BROWSE_FILTERS,
+    ...input,
+    genreIds: Array.isArray(input.genreIds)
+      ? input.genreIds.filter((id): id is number => typeof id === 'number')
+      : DEFAULT_BROWSE_FILTERS.genreIds,
+    watchProviderIds: Array.isArray(input.watchProviderIds)
+      ? input.watchProviderIds.filter((id): id is number => typeof id === 'number')
+      : DEFAULT_BROWSE_FILTERS.watchProviderIds,
+    watchRegion:
+      typeof input.watchRegion === 'string' && input.watchRegion.length === 2
+        ? input.watchRegion.toUpperCase()
+        : DEFAULT_BROWSE_FILTERS.watchRegion,
+    watchMonetizationTypes: Array.isArray(input.watchMonetizationTypes)
+      ? input.watchMonetizationTypes.filter((type): type is WatchMonetizationType =>
+          VALID_MONETIZATION.includes(type as WatchMonetizationType)
+        )
+      : DEFAULT_BROWSE_FILTERS.watchMonetizationTypes,
+    page: typeof input.page === 'number' && input.page > 0 ? input.page : 1,
+    oscarExcludeYears:
+      typeof input.oscarExcludeYears === 'number'
+        ? Math.min(25, Math.max(1, Math.round(input.oscarExcludeYears)))
+        : DEFAULT_BROWSE_FILTERS.oscarExcludeYears,
+  };
 }

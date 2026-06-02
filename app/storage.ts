@@ -1,10 +1,12 @@
 import { Movie, Rating, Recommendation, DismissedRecommendation } from './types';
+import { mergeBrowseFilters, type TmdbBrowseFilters } from './tmdb-browse';
 
 const RATINGS_KEY = 'movieRatings';
 const MOVIE_CACHE_KEY = 'movieCache';
 const ACTIVE_TAB_KEY = 'activeTab';
 const DISCOVERY_MODE_KEY = 'discoveryMode';
 const BROWSE_STREAMING_KEY = 'browseStreamingPrefs';
+const BROWSE_FILTERS_KEY = 'browseFilters';
 const GROK_CACHE_KEY = 'grokRecCache';
 const DISMISSALS_KEY = 'recDismissals';
 
@@ -141,6 +143,29 @@ export function persistStreamingSelections(
 export function clearBrowseStreamingPrefs(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(BROWSE_STREAMING_KEY);
+}
+
+export function loadSavedBrowseFilters(): TmdbBrowseFilters {
+  if (typeof window === 'undefined') return mergeBrowseFilters();
+  const saved = localStorage.getItem(BROWSE_FILTERS_KEY);
+  if (!saved) return mergeBrowseFilters();
+  try {
+    return mergeBrowseFilters(JSON.parse(saved) as Partial<TmdbBrowseFilters>);
+  } catch {
+    return mergeBrowseFilters();
+  }
+}
+
+export function saveBrowseFilters(filters: TmdbBrowseFilters): void {
+  if (typeof window === 'undefined') return;
+  const { page: _page, ...stored } = filters;
+  localStorage.setItem(BROWSE_FILTERS_KEY, JSON.stringify(stored));
+}
+
+export function clearAllBrowsePrefs(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(BROWSE_STREAMING_KEY);
+  localStorage.removeItem(BROWSE_FILTERS_KEY);
 }
 
 interface GrokCacheStore {

@@ -428,10 +428,6 @@ function buildDiscoverParams(filters: TmdbBrowseFilters): Record<string, string>
 
   const withoutKeywords: number[] = [];
 
-  if (filters.excludeOscarNomineesAndWinners) {
-    withoutKeywords.push(TMDB_KEYWORDS.oscarWinner, TMDB_KEYWORDS.oscarNominee);
-  }
-
   if (filters.excludeSequels) {
     withoutKeywords.push(TMDB_KEYWORDS.sequel);
   }
@@ -455,6 +451,30 @@ function buildDiscoverParams(filters: TmdbBrowseFilters): Record<string, string>
   return params;
 }
 
+const OSCAR_KEYWORD_IDS = new Set<number>([
+  TMDB_KEYWORDS.oscarWinner,
+  TMDB_KEYWORDS.oscarNominee,
+]);
+
+function isWithinOscarExcludeWindow(movie: Movie, years: number): boolean {
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  cutoff.setHours(0, 0, 0, 0);
+  const release = movie.releaseDate
+    ? new Date(movie.releaseDate)
+    : new Date(movie.year, 11, 31);
+  return release >= cutoff;
+}
+
+async function fetchMovieKeywordIds(movieId: string): Promise<number[]> {
+  const data = await tmdbFetch<{ keywords?: { id: number }[] }>(`/movie/${movieId}/keywords`);
+  return data.keywords?.map((keyword) => keyword.id) ?? [];
+}
+
+function hasOscarKeyword(keywordIds: number[]): boolean {
+  return keywordIds.some((id) => OSCAR_KEYWORD_IDS.has(id));
+}
+
 async function applyPostFetchFilters(
   movies: Movie[],
   filters: TmdbBrowseFilters,
@@ -462,19 +482,42 @@ async function applyPostFetchFilters(
 ): Promise<Movie[]> {
   let filtered = movies.filter((movie) => !excludeIds.has(movie.id));
 
+  const needsOscarFilter = filters.excludeOscarNomineesAndWinners;
   const needsBudgetFilter = filters.maxBudgetMillions !== null && filters.maxBudgetMillions > 0;
   const needsCollectionFilter = filters.excludeFranchise;
 
-  if (!needsBudgetFilter && !needsCollectionFilter) {
+  if (!needsOscarFilter && !needsBudgetFilter && !needsCollectionFilter) {
     return filtered;
   }
 
-  const enriched = await Promise.all(
-    filtered.slice(0, 20).map((movie) =>
-      fetchMovieDetails(movie.id).catch(() => movie)
-    )
+  const detailIds = new Set<string>();
+  const keywordIds = new Set<string>();
+
+  for (const movie of filtered) {
+    if (needsBudgetFilter || needsCollectionFilter) {
+      detailIds.add(movie.id);
+    }
+    if (needsOscarFilter && isWithinOscarExcludeWindow(movie, filters.oscarExcludeYears)) {
+      keywordIds.add(movie.id);
+    }
+  }
+
+  const [details, keywordEntries] = await Promise.all([
+    Promise.all(
+      [...detailIds].map((movieId) => fetchMovieDetails(movieId).catch(() => null))
+    ),
+    Promise.all(
+      [...keywordIds].map(async (movieId) => {
+        const ids = await fetchMovieKeywordIds(movieId).catch(() => []);
+        return [movieId, ids] as const;
+      })
+    ),
+  ]);
+
+  const enrichedById = new Map(
+    details.filter((movie): movie is Movie => movie !== null).map((movie) => [movie.id, movie])
   );
-  const enrichedById = new Map(enriched.map((movie) => [movie.id, movie]));
+  const keywordsById = new Map(keywordEntries);
 
   filtered = filtered
     .map((movie) => enrichedById.get(movie.id) ?? movie)
@@ -483,6 +526,13 @@ async function applyPostFetchFilters(
       if (needsBudgetFilter && movie.budget && movie.budget > 0) {
         const maxBudget = filters.maxBudgetMillions! * 1_000_000;
         if (movie.budget > maxBudget) return false;
+      }
+      if (
+        needsOscarFilter &&
+        isWithinOscarExcludeWindow(movie, filters.oscarExcludeYears) &&
+        hasOscarKeyword(keywordsById.get(movie.id) ?? [])
+      ) {
+        return false;
       }
       return true;
     });
