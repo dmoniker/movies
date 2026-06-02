@@ -568,7 +568,7 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden">
+    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden min-w-0 max-w-full">
       <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
         <div>
           <h3 className="font-semibold text-sm sm:text-base">TMDB hard filters</h3>

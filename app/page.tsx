@@ -840,9 +840,9 @@ export default function MovieTasteApp() {
   const isSearching = searchTerm.trim().length > 0;
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-      <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex items-center justify-between gap-3">
+    <div className="min-h-screen w-full overflow-x-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+      <header className="w-full overflow-x-hidden border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex items-center justify-between gap-3 min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 sm:w-10 sm:h-10 bg-violet-600 rounded-2xl flex items-center justify-center shrink-0">
               <span className="text-white text-xl sm:text-2xl">🎬</span>
@@ -931,13 +931,13 @@ export default function MovieTasteApp() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-zinc-100 dark:border-zinc-800 overflow-x-auto">
-          <div className="flex min-w-max sm:min-w-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-zinc-100 dark:border-zinc-800">
+          <div className="flex w-full">
             {(['darcy', 'wife', 'shared'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 sm:flex-none px-4 sm:px-8 py-3 sm:py-4 font-medium text-xs sm:text-sm border-b-2 transition-colors flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap ${
+                className={`flex-1 min-w-0 px-2 sm:px-8 py-3 sm:py-4 font-medium text-xs sm:text-sm border-b-2 transition-colors flex items-center justify-center gap-1.5 sm:gap-2 ${
                   activeTab === tab
                     ? 'border-violet-600 text-violet-600'
                     : 'border-transparent hover:text-zinc-900 dark:hover:text-white text-zinc-500'
@@ -952,15 +952,15 @@ export default function MovieTasteApp() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 min-w-0">
         {catalogError ? (
           <div className="mb-8 rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-6 py-4 text-sm text-amber-900 dark:text-amber-200">
             {catalogError}
           </div>
         ) : null}
 
-        <div className="grid grid-cols-12 gap-5 sm:gap-8">
-          <div className="col-span-12 lg:col-span-4 space-y-4 sm:space-y-6 order-2 lg:order-1">
+        <div className="grid grid-cols-12 gap-5 sm:gap-8 min-w-0">
+          <div className="col-span-12 lg:col-span-4 space-y-4 sm:space-y-6 order-2 lg:order-1 min-w-0">
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl sm:rounded-3xl p-5 sm:p-8">
               <div className="flex items-center justify-between mb-4 sm:mb-6 gap-3">
                 <h2 className="text-lg sm:text-xl font-semibold truncate">{userNames[activeTab]}</h2>
@@ -1016,9 +1016,9 @@ export default function MovieTasteApp() {
             </div>
           </div>
 
-          <div className="col-span-12 lg:col-span-8 space-y-6 sm:space-y-10 order-1 lg:order-2">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-2xl w-full sm:w-auto">
+          <div className="col-span-12 lg:col-span-8 space-y-6 sm:space-y-10 order-1 lg:order-2 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
+              <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-2xl w-full sm:w-auto min-w-0">
                 <button
                   type="button"
                   onClick={() => setDiscoveryMode('taste')}
@@ -1042,7 +1042,7 @@ export default function MovieTasteApp() {
                   Browse TMDB
                 </button>
               </div>
-              <p className="text-xs text-zinc-500 sm:max-w-xs sm:text-right">
+              <p className="text-xs text-zinc-500 sm:max-w-xs sm:text-right min-w-0">
                 {discoveryMode === 'taste'
                   ? 'Watched history + Grok rerank picks for you'
                   : 'Hard filters on TMDB metadata — indie-first discovery'}
@@ -1194,12 +1194,12 @@ export default function MovieTasteApp() {
                     </h2>
                   </div>
 
-                  <div className="flex gap-2 overflow-x-auto pb-0.5 -mx-1 px-1">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2 sm:overflow-x-auto sm:pb-0.5">
                     {(['seen', 'wantToSee', 'all', 'unseen'] as const).map((f) => (
                       <button
                         key={f}
                         onClick={() => setFilterSeen(f)}
-                        className={`flex-1 sm:flex-none min-w-[4.5rem] px-4 sm:px-6 py-2.5 sm:py-3 text-sm font-medium rounded-2xl sm:rounded-3xl transition-all whitespace-nowrap ${
+                        className={`min-w-0 px-3 sm:px-6 py-2.5 sm:py-3 text-sm font-medium rounded-2xl sm:rounded-3xl transition-all sm:whitespace-nowrap ${
                           filterSeen === f
                             ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
                             : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100'
@@ -1230,8 +1230,8 @@ export default function MovieTasteApp() {
                   <div
                     className={
                       discoveryMode === 'tmdbBrowse' && browseLayout === 'grid' && !isSearching
-                        ? 'grid grid-cols-2 md:grid-cols-3 gap-4'
-                        : 'grid grid-cols-1 md:grid-cols-2 gap-4'
+                        ? 'grid grid-cols-2 md:grid-cols-3 gap-4 min-w-0'
+                        : 'grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0'
                     }
                   >
                     {filteredMovies.map((movie) => {

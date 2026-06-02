@@ -27,7 +27,7 @@ export default function TasteRadar({ profile, title }: TasteRadarProps) {
   }
 
   return (
-    <div className="h-52 sm:h-64 w-full">
+    <div className="h-52 sm:h-64 w-full min-w-0 max-w-full overflow-hidden">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart cx="50%" cy="50%" outerRadius="75%" data={topGenres}>
           <PolarGrid stroke="#e5e5e5" />
