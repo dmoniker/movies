@@ -4,9 +4,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Users, Heart, Download, Upload, Search, X, ChevronDown } from 'lucide-react';
 import { Movie, Rating, Recommendation, UserId, DismissedRecommendation } from './types';
 import { calculateTasteProfile, getRecommendations } from './utils';
-import { rerankWithGrok } from './grok';
 import { fetchApiConfig, type ApiConfig } from './api-client';
-import { buildRulesFromDismissals, dismissalsForUser, isDismissed } from './rec-feedback';
+import { isDismissed } from './rec-feedback';
 import {
   fetchPopularMovies,
   searchCatalog,
@@ -33,7 +32,6 @@ import {
   clearAllBrowsePrefs,
   loadDismissals,
   saveDismissals,
-  clearGrokCache,
   parseBackupFile,
   applyBackup,
   type ActiveTab,
@@ -107,13 +105,11 @@ export default function MovieTasteApp() {
   const [filterSeen, setFilterSeen] = useState<LibraryFilter>('seen');
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [apiConfig, setApiConfig] = useState<ApiConfig>({ tmdb: false, xai: false });
+  const [apiConfig, setApiConfig] = useState<ApiConfig>({ tmdb: false });
   const [dismissals, setDismissals] = useState<DismissedRecommendation[]>([]);
   const [dismissTarget, setDismissTarget] = useState<Movie | null>(null);
   const [recBatchByTab, setRecBatchByTab] = useState<Partial<Record<Tab, Recommendation[]>>>({});
   const [recBatchLoading, setRecBatchLoading] = useState(false);
-  const [batchUsedGrok, setBatchUsedGrok] = useState(false);
-  const [grokError, setGrokError] = useState<string | null>(null);
   const [exitingCardIds, setExitingCardIds] = useState<Set<string>>(new Set());
   const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>('taste');
   const [browseFilters, setBrowseFilters] = useState<TmdbBrowseFilters>(DEFAULT_BROWSE_FILTERS);
@@ -167,7 +163,7 @@ export default function MovieTasteApp() {
     setBrowsePrefsLoaded(true);
     fetchApiConfig()
       .then(setApiConfig)
-      .catch(() => setApiConfig({ tmdb: false, xai: false }));
+      .catch(() => setApiConfig({ tmdb: false }));
   }, []);
 
   useEffect(() => {
@@ -201,9 +197,7 @@ export default function MovieTasteApp() {
 
   useEffect(() => {
     if (!apiConfig.tmdb) {
-      setCatalogError(
-        'Add TMDB_API_KEY to .env.local on the server. Get a free key at themoviedb.org/settings/api'
-      );
+      setCatalogError('Movie search is unavailable. The server needs a TMDB API key configured.');
       setCatalogLoading(false);
       return;
     }
@@ -270,7 +264,6 @@ export default function MovieTasteApp() {
 
     const tab = activeTab;
     setRecBatchLoading(true);
-    setGrokError(null);
 
     const currentRatings = ratingsRef.current;
     const currentDismissals = dismissalsRef.current;
@@ -301,41 +294,6 @@ export default function MovieTasteApp() {
         batch = batch.filter((r) => r.forBoth);
       }
 
-      let usedGrok = false;
-      if (apiConfig.xai && currentRatings.length > 0 && batch.length > 0) {
-        const profile = calculateTasteProfile(
-          currentRatings,
-          movies,
-          tab === 'wife' ? 'wife' : 'darcy'
-        );
-        const otherProfile =
-          tab === 'shared' ? calculateTasteProfile(currentRatings, movies, 'wife') : undefined;
-        const grokDismissals =
-          tab === 'shared' ? currentDismissals : dismissalsForUser(currentDismissals, userId);
-
-        clearGrokCache();
-        try {
-          const result = await rerankWithGrok({
-            ratings: currentRatings,
-            movies,
-            profile,
-            otherProfile,
-            userId,
-            otherUserId,
-            candidates: batch,
-            mode: tab === 'shared' ? 'shared' : 'personal',
-            dismissals: grokDismissals,
-            avoidanceRules: buildRulesFromDismissals(grokDismissals),
-          });
-          if (result?.length) {
-            batch = result;
-            usedGrok = true;
-          }
-        } catch (error) {
-          setGrokError(error instanceof Error ? error.message : 'Grok request failed');
-        }
-      }
-
       let filtered = filterAvailableRecs(batch, tab, currentRatings, currentDismissals).slice(
         0,
         REC_BATCH_SIZE
@@ -357,14 +315,13 @@ export default function MovieTasteApp() {
           // Keep recommendations even if director enrichment fails.
         }
       }
-      setBatchUsedGrok(usedGrok);
       setRecBatchByTab((prev) => ({ ...prev, [tab]: filtered }));
     } catch {
       setRecBatchByTab((prev) => ({ ...prev, [tab]: [] }));
     } finally {
       setRecBatchLoading(false);
     }
-  }, [activeTab, apiConfig.tmdb, apiConfig.xai, cacheMovie]);
+  }, [activeTab, apiConfig.tmdb, cacheMovie]);
 
   const loadRecBatchRef = useRef(loadRecBatch);
   loadRecBatchRef.current = loadRecBatch;
@@ -372,7 +329,7 @@ export default function MovieTasteApp() {
   useEffect(() => {
     if (!apiConfig.tmdb || discoveryMode !== 'taste') return;
     loadRecBatch();
-  }, [activeTab, apiConfig.tmdb, apiConfig.xai, loadRecBatch, discoveryMode]);
+  }, [activeTab, apiConfig.tmdb, loadRecBatch, discoveryMode]);
 
   useEffect(() => {
     if (!apiConfig.tmdb || discoveryMode !== 'tmdbBrowse' || searchTerm.trim() || !browsePrefsLoaded)
@@ -688,7 +645,6 @@ export default function MovieTasteApp() {
       setMovieCache(data.movieCache);
       setDismissals(data.dismissals);
       setRecBatchByTab({});
-      setGrokError(null);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not import backup file');
     }
@@ -1044,7 +1000,7 @@ export default function MovieTasteApp() {
               </div>
               <p className="text-xs text-zinc-500 sm:max-w-xs sm:text-right min-w-0">
                 {discoveryMode === 'taste'
-                  ? 'Watched history + Grok rerank picks for you'
+                  ? 'Watched history + taste algorithm picks for you'
                   : 'Hard filters on TMDB metadata — indie-first discovery'}
               </p>
             </div>
@@ -1112,19 +1068,9 @@ export default function MovieTasteApp() {
                     Recommended for {activeTab === 'shared' ? 'Both' : 'You'}
                   </h2>
                   <span className="text-xs uppercase tracking-widest text-zinc-400">
-                    {recBatchLoading
-                      ? apiConfig.xai && ratings.length > 0
-                        ? 'Finding your next picks…'
-                        : 'Loading from TMDB…'
-                      : batchUsedGrok
-                        ? 'Powered by Grok'
-                        : 'Based on your taste profile'}
+                    {recBatchLoading ? 'Finding your next picks…' : 'Based on your taste profile'}
                   </span>
                 </div>
-
-                {grokError ? (
-                  <div className="text-sm text-amber-600 dark:text-amber-400 mb-3">{grokError}</div>
-                ) : null}
 
                 {recBatchLoading && displayedRecBatch.length === 0 ? (
                   <div className="text-sm text-zinc-400">Finding movies you might like…</div>

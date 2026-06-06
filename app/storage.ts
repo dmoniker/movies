@@ -1,4 +1,4 @@
-import { Movie, Rating, Recommendation, DismissedRecommendation } from './types';
+import { Movie, Rating, DismissedRecommendation } from './types';
 import { mergeBrowseFilters, type TmdbBrowseFilters } from './tmdb-browse';
 
 const RATINGS_KEY = 'movieRatings';
@@ -7,7 +7,6 @@ const ACTIVE_TAB_KEY = 'activeTab';
 const DISCOVERY_MODE_KEY = 'discoveryMode';
 const BROWSE_STREAMING_KEY = 'browseStreamingPrefs';
 const BROWSE_FILTERS_KEY = 'browseFilters';
-const GROK_CACHE_KEY = 'grokRecCache';
 const DISMISSALS_KEY = 'recDismissals';
 
 export type ActiveTab = 'darcy' | 'wife' | 'shared';
@@ -168,48 +167,6 @@ export function clearAllBrowsePrefs(): void {
   localStorage.removeItem(BROWSE_FILTERS_KEY);
 }
 
-interface GrokCacheStore {
-  [cacheKey: string]: Recommendation[];
-}
-
-export function loadGrokCacheEntry(cacheKey: string): Recommendation[] | null {
-  if (typeof window === 'undefined') return null;
-  const saved = localStorage.getItem(GROK_CACHE_KEY);
-  if (!saved) return null;
-  try {
-    const store = JSON.parse(saved) as GrokCacheStore;
-    return store[cacheKey] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveGrokCacheEntry(cacheKey: string, recommendations: Recommendation[]): void {
-  if (typeof window === 'undefined') return;
-  let store: GrokCacheStore = {};
-  const saved = localStorage.getItem(GROK_CACHE_KEY);
-  if (saved) {
-    try {
-      store = JSON.parse(saved) as GrokCacheStore;
-    } catch {
-      store = {};
-    }
-  }
-  store[cacheKey] = recommendations;
-  const keys = Object.keys(store);
-  if (keys.length > 20) {
-    for (const key of keys.slice(0, keys.length - 20)) {
-      delete store[key];
-    }
-  }
-  localStorage.setItem(GROK_CACHE_KEY, JSON.stringify(store));
-}
-
-export function clearGrokCache(): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(GROK_CACHE_KEY);
-}
-
 export function loadDismissals(): DismissedRecommendation[] {
   if (typeof window === 'undefined') return [];
   const saved = localStorage.getItem(DISMISSALS_KEY);
@@ -267,5 +224,4 @@ export function applyBackup(data: BackupData): void {
   saveRatings(data.ratings);
   saveMovieCache(data.movieCache);
   saveDismissals(data.dismissals);
-  clearGrokCache();
 }

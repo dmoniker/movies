@@ -1,6 +1,5 @@
 export interface ApiConfig {
   tmdb: boolean;
-  xai: boolean;
 }
 
 export const APP_BASE_PATH = '';
