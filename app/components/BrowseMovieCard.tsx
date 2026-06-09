@@ -1,15 +1,15 @@
 'use client';
 
-import { Movie, Rating } from '../types';
-import { Star, Eye, EyeOff, Bookmark, Calendar, Users, DollarSign, Clock } from 'lucide-react';
+import { useState } from 'react';
+import { Movie } from '../types';
+import { fetchMovieTrailer } from '../tmdb';
+import { Star, Calendar, Users, DollarSign, Clock, Sparkles, Play } from 'lucide-react';
 import Image from 'next/image';
+import TrailerModal from './TrailerModal';
 
 interface BrowseMovieCardProps {
   movie: Movie;
-  rating?: Rating;
   layout: 'grid' | 'list';
-  onRate: (movieId: string, rating: number, seen: boolean, notes?: string, wantToSee?: boolean) => void;
-  onWantToSee?: (movie: Movie) => void;
 }
 
 function formatBudget(value?: number): string | null {
@@ -38,22 +38,43 @@ function MetadataChip({
   );
 }
 
-export default function BrowseMovieCard({
-  movie,
-  rating,
-  layout,
-  onRate,
-  onWantToSee,
-}: BrowseMovieCardProps) {
-  const currentRating = rating?.rating || 0;
-  const isSeen = rating?.seen || false;
-  const wantToSee = Boolean(rating?.wantToSee && !isSeen);
-  const directorLabel = movie.director || 'Director loading…';
+export default function BrowseMovieCard({ movie, layout }: BrowseMovieCardProps) {
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [trailerLoading, setTrailerLoading] = useState(false);
+  const [trailerUnavailable, setTrailerUnavailable] = useState(false);
+
+  const directorLabel = movie.director || 'Unknown director';
   const budgetLabel = formatBudget(movie.budget);
 
-  const handleRating = (newRating: number) => {
-    onRate(movie.id, newRating, true, rating?.notes);
+  const openTrailer = async () => {
+    if (trailerLoading) return;
+    setTrailerLoading(true);
+    setTrailerUnavailable(false);
+    try {
+      const { youtubeKey } = await fetchMovieTrailer(movie.id);
+      if (youtubeKey) {
+        setTrailerKey(youtubeKey);
+      } else {
+        setTrailerUnavailable(true);
+      }
+    } catch {
+      setTrailerUnavailable(true);
+    } finally {
+      setTrailerLoading(false);
+    }
   };
+
+  const trailerButton = (
+    <button
+      type="button"
+      onClick={openTrailer}
+      disabled={trailerLoading}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white transition-colors"
+    >
+      <Play className="w-3.5 h-3.5 fill-current" />
+      {trailerLoading ? 'Loading…' : 'Trailer'}
+    </button>
+  );
 
   const metadata = (
     <div className="flex flex-wrap gap-1.5 mb-2">
@@ -62,6 +83,13 @@ export default function BrowseMovieCard({
       ) : null}
       {movie.voteCount !== undefined && movie.voteCount > 0 ? (
         <MetadataChip icon={Users} label="Votes" value={`${movie.voteCount.toLocaleString()} votes`} />
+      ) : null}
+      {movie.popularity !== undefined ? (
+        <MetadataChip
+          icon={Sparkles}
+          label="Popularity"
+          value={movie.popularity < 3 ? 'Obscure' : movie.popularity.toFixed(1)}
+        />
       ) : null}
       {movie.releaseDate ? (
         <MetadataChip icon={Calendar} label="Released" value={movie.releaseDate} />
@@ -93,120 +121,96 @@ export default function BrowseMovieCard({
     </div>
   );
 
-  const actions = (
-    <div className="flex flex-wrap items-center gap-2 text-xs">
-      {isSeen ? (
-        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-          <Eye className="w-3.5 h-3.5" />
-          Seen
-          {currentRating > 0 ? <span className="font-mono">• {currentRating}/10</span> : null}
-        </span>
-      ) : wantToSee ? (
-        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400">
-          <Bookmark className="w-3.5 h-3.5" />
-          Want to see
-        </span>
-      ) : onWantToSee ? (
-        <button
-          type="button"
-          onClick={() => onWantToSee(movie)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors"
-        >
-          <Bookmark className="w-3.5 h-3.5" />
-          Want to see
-        </button>
-      ) : null}
-      {!isSeen ? (
-        <button
-          type="button"
-          onClick={() => onRate(movie.id, currentRating, true, rating?.notes, false)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-        >
-          <EyeOff className="w-3.5 h-3.5" />
-          Mark Seen
-        </button>
-      ) : null}
-    </div>
-  );
-
-  const stars = (
-    <div className="flex items-center gap-0.5 text-amber-500">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <button
-          key={i}
-          type="button"
-          aria-label={`Rate ${(i + 1) * 2} out of 10`}
-          className="p-0.5"
-          onClick={() => handleRating((i + 1) * 2)}
-        >
-          <Star
-            className={`w-4 h-4 transition-colors ${
-              i < Math.floor(currentRating / 2) ? 'fill-current' : 'text-zinc-300 dark:text-zinc-700'
-            }`}
-          />
-        </button>
-      ))}
-    </div>
+  const posterOverlay = (
+    <button
+      type="button"
+      onClick={openTrailer}
+      disabled={trailerLoading}
+      aria-label={`Play ${movie.title} trailer`}
+      className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors group disabled:cursor-wait"
+    >
+      <span className="flex items-center justify-center w-12 h-12 rounded-full bg-white/90 text-violet-700 opacity-0 group-hover:opacity-100 group-disabled:opacity-70 transition-opacity shadow-lg">
+        <Play className="w-5 h-5 fill-current ml-0.5" />
+      </span>
+    </button>
   );
 
   if (layout === 'grid') {
     return (
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden hover:shadow-md transition-all group flex flex-col">
-        {movie.poster ? (
-          <div className="relative w-full aspect-[2/3] bg-zinc-100 dark:bg-zinc-800">
-            <Image src={movie.poster} alt="" fill className="object-cover" unoptimized />
-            {movie.voteAverage !== undefined ? (
-              <span className="absolute top-2 right-2 px-2 py-0.5 text-xs font-semibold bg-black/70 text-white rounded-full">
-                {movie.voteAverage.toFixed(1)}
-              </span>
+      <>
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden hover:shadow-md transition-all flex flex-col">
+          {movie.poster ? (
+            <div className="relative w-full aspect-[2/3] bg-zinc-100 dark:bg-zinc-800">
+              <Image src={movie.poster} alt="" fill className="object-cover" unoptimized />
+              {posterOverlay}
+              {movie.voteAverage !== undefined ? (
+                <span className="absolute top-2 right-2 px-2 py-0.5 text-xs font-semibold bg-black/70 text-white rounded-full pointer-events-none">
+                  {movie.voteAverage.toFixed(1)}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">{trailerButton}</div>
+          )}
+          <div className="p-4 flex flex-col flex-1">
+            <h3 className="font-semibold text-sm leading-tight line-clamp-2 mb-1">{movie.title}</h3>
+            <p className="text-xs text-zinc-500 mb-2 truncate">
+              {movie.year} • {directorLabel}
+            </p>
+            {metadata}
+            {genres}
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 line-clamp-3 flex-1 mb-3">
+              {movie.description}
+            </p>
+            {movie.poster ? (
+              <div className="flex items-center gap-2">
+                {trailerButton}
+                {trailerUnavailable ? (
+                  <span className="text-xs text-zinc-400">No trailer on TMDB</span>
+                ) : null}
+              </div>
             ) : null}
           </div>
-        ) : null}
-        <div className="p-4 flex flex-col flex-1">
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="font-semibold text-sm leading-tight line-clamp-2">{movie.title}</h3>
-            {stars}
-          </div>
-          <p className="text-xs text-zinc-500 mb-2 truncate">
-            {movie.year} • {directorLabel}
-          </p>
-          {metadata}
-          {genres}
-          <p className="text-xs text-zinc-600 dark:text-zinc-400 line-clamp-3 mb-3 flex-1">
-            {movie.description}
-          </p>
-          {actions}
         </div>
-      </div>
+        {trailerKey ? (
+          <TrailerModal title={movie.title} youtubeKey={trailerKey} onClose={() => setTrailerKey(null)} />
+        ) : null}
+      </>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 hover:shadow-md transition-all">
-      <div className="flex gap-3 sm:gap-4">
-        {movie.poster ? (
-          <div className="shrink-0 w-14 h-20 sm:w-16 sm:h-24 relative rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-            <Image src={movie.poster} alt="" fill className="object-cover" unoptimized />
-          </div>
-        ) : null}
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
-            <div className="min-w-0">
-              <h3 className="font-semibold text-base sm:text-lg leading-tight">{movie.title}</h3>
-              <p className="text-xs sm:text-sm text-zinc-500 truncate">
-                {movie.year} • {directorLabel}
-              </p>
+    <>
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 sm:p-5 hover:shadow-md transition-all">
+        <div className="flex gap-3 sm:gap-4">
+          {movie.poster ? (
+            <div className="shrink-0 w-14 h-20 sm:w-16 sm:h-24 relative rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+              <Image src={movie.poster} alt="" fill className="object-cover" unoptimized />
+              {posterOverlay}
             </div>
-            {stars}
+          ) : null}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-base sm:text-lg leading-tight mb-1">{movie.title}</h3>
+            <p className="text-xs sm:text-sm text-zinc-500 truncate mb-2">
+              {movie.year} • {directorLabel}
+            </p>
+            {metadata}
+            {genres}
+            <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 line-clamp-2 mb-3">
+              {movie.description}
+            </p>
+            <div className="flex items-center gap-2">
+              {trailerButton}
+              {trailerUnavailable ? (
+                <span className="text-xs text-zinc-400">No trailer on TMDB</span>
+              ) : null}
+            </div>
           </div>
-          {metadata}
-          {genres}
-          <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 line-clamp-2 mb-3">
-            {movie.description}
-          </p>
-          {actions}
         </div>
       </div>
-    </div>
+      {trailerKey ? (
+        <TrailerModal title={movie.title} youtubeKey={trailerKey} onClose={() => setTrailerKey(null)} />
+      ) : null}
+    </>
   );
 }

@@ -34,6 +34,10 @@ export async function fetchMovieDetails(movieId: string): Promise<Movie> {
   return apiFetch(`/tmdb/movie/${movieId}`);
 }
 
+export async function fetchMovieTrailer(movieId: string): Promise<{ youtubeKey: string | null }> {
+  return apiFetch(`/tmdb/movie/${movieId}/videos`);
+}
+
 export async function fetchRecommendationCandidates(
   ratings: Rating[],
   cachedMovies: Movie[],

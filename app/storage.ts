@@ -63,9 +63,9 @@ export function saveActiveTab(tab: ActiveTab): void {
 }
 
 export function loadDiscoveryMode(): DiscoveryMode {
-  if (typeof window === 'undefined') return 'taste';
+  if (typeof window === 'undefined') return 'tmdbBrowse';
   const saved = localStorage.getItem(DISCOVERY_MODE_KEY);
-  return saved === 'tmdbBrowse' ? 'tmdbBrowse' : 'taste';
+  return saved === 'taste' ? 'taste' : 'tmdbBrowse';
 }
 
 export function saveDiscoveryMode(mode: DiscoveryMode): void {

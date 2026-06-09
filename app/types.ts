@@ -17,6 +17,7 @@ export interface Movie {
   revenue?: number;
   inCollection?: boolean;
   imdbId?: string;
+  popularity?: number;
 }
 
 export interface Rating {

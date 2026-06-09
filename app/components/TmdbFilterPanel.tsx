@@ -12,7 +12,6 @@ import {
 import {
   DEFAULT_BROWSE_FILTERS,
   FILTER_GROUPS,
-  GENRE_OPTIONS,
   MONETIZATION_OPTIONS,
   RELEASE_WINDOW_OPTIONS,
   SORT_OPTIONS,
@@ -25,13 +24,6 @@ interface TmdbFilterPanelProps {
   filters: TmdbBrowseFilters;
   onChange: (filters: TmdbBrowseFilters) => void;
 }
-
-const PRIORITY_STYLES = {
-  signature: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
-  core: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
-  v2: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-  nice: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
-};
 
 function Toggle({
   checked,
@@ -149,9 +141,7 @@ function ProviderChip({
 }
 
 export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelProps) {
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(['hard', 'quality', 'mood', 'streaming'])
-  );
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [watchProviders, setWatchProviders] = useState<WatchProvider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(false);
   const [providersError, setProvidersError] = useState<string | null>(null);
@@ -260,12 +250,25 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
   const renderField = (field: (typeof FILTER_GROUPS)[0]['fields'][0]) => {
     switch (field.type) {
       case 'toggle': {
-        const key = field.key as 'excludeOscarNomineesAndWinners' | 'indieFocus' | 'excludeSequels' | 'excludeFranchise' | 'excludeAdult';
+        const key = field.key as
+          | 'excludeOscarNomineesAndWinners'
+          | 'indieFocus'
+          | 'excludeSequels'
+          | 'excludeFranchise'
+          | 'excludeAdult'
+          | 'underTwoHours'
+          | 'excludeOlderThanEnabled';
         return (
           <Toggle
             key={field.key}
             checked={Boolean(filters[key])}
-            onChange={(value) => update({ [key]: value })}
+            onChange={(value) => {
+              if (key === 'underTwoHours' && value) {
+                update({ underTwoHours: true, maxRuntime: null });
+              } else {
+                update({ [key]: value });
+              }
+            }}
             label={field.label}
             description={field.description}
           />
@@ -277,13 +280,14 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
             <SliderField
               key={field.key}
               value={filters.minVoteAverage}
-              onChange={(value) => update({ minVoteAverage: value ?? 0 })}
-              min={field.min ?? 0}
-              max={field.max ?? 10}
+              onChange={(value) => update({ minVoteAverage: value ?? 6 })}
+              min={field.min ?? 6}
+              max={field.max ?? 9}
               step={field.step ?? 0.5}
               label={field.label}
               description={field.description}
-              formatValue={(v) => (v === null ? 'Any' : v.toFixed(1))}
+              formatValue={(v) => (v === null ? 'Any' : `${v?.toFixed(1)}+`)}
+              nullable={false}
             />
           );
         }
@@ -294,14 +298,16 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
               value={filters.minVoteCount}
               onChange={(value) => update({ minVoteCount: value ?? 0 })}
               min={field.min ?? 0}
-              max={field.max ?? 5000}
-              step={field.step ?? 50}
+              max={field.max ?? 500}
+              step={field.step ?? 25}
               label={field.label}
               description={field.description}
+              nullable={false}
             />
           );
         }
         if (field.key === 'maxRuntime') {
+          if (filters.underTwoHours) return null;
           return (
             <SliderField
               key={field.key}
@@ -348,6 +354,23 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
             />
           );
         }
+        if (field.key === 'maxMovieAgeYears') {
+          if (!filters.excludeOlderThanEnabled) return null;
+          return (
+            <SliderField
+              key={field.key}
+              value={filters.maxMovieAgeYears}
+              onChange={(value) => update({ maxMovieAgeYears: value ?? 1 })}
+              min={field.min ?? 1}
+              max={field.max ?? 30}
+              step={field.step ?? 1}
+              label={field.label}
+              description={field.description}
+              formatValue={(v) => `Last ${v ?? 10} years`}
+              nullable={false}
+            />
+          );
+        }
         return null;
       }
       case 'select':
@@ -378,36 +401,6 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
           );
         }
         return null;
-      case 'genres':
-        return (
-          <div key={field.key}>
-            <span className="text-sm font-medium block mb-2">{field.label}</span>
-            <div className="flex flex-wrap gap-1.5">
-              {GENRE_OPTIONS.map(({ id, name }) => {
-                const selected = filters.genreIds.includes(id);
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => {
-                      const genreIds = selected
-                        ? filters.genreIds.filter((g) => g !== id)
-                        : [...filters.genreIds, id];
-                      update({ genreIds });
-                    }}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-full transition-all ${
-                      selected
-                        ? 'bg-violet-600 text-white'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    {name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
       default:
         return null;
     }
@@ -446,9 +439,7 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
 
           {selectedProviders.length > 0 ? (
             <div className="mb-3">
-              <span className="text-xs uppercase tracking-widest text-zinc-400 block mb-2">
-                Selected
-              </span>
+              <span className="text-xs uppercase tracking-widest text-zinc-400 block mb-2">Selected</span>
               <div className="flex flex-wrap gap-2">
                 {selectedProviders.map((provider) => (
                   <ProviderChip
@@ -570,28 +561,21 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden min-w-0 max-w-full">
       <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
-        <div>
-          <h3 className="font-semibold text-sm sm:text-base">TMDB hard filters</h3>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Query the catalog directly — no taste profile required
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={atDefaults}
-            onClick={() => {
-              clearAllBrowsePrefs();
-              setSavedProviderNames({});
-              setProviderSearch('');
-              onChange(DEFAULT_BROWSE_FILTERS);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-          >
-            <RotateCcw className="w-3 h-3" />
-            Reset
-          </button>
-        </div>
+        <p className="text-xs text-zinc-500">Saved in your browser. Reset restores defaults.</p>
+        <button
+          type="button"
+          disabled={atDefaults}
+          onClick={() => {
+            clearAllBrowsePrefs();
+            setSavedProviderNames({});
+            setProviderSearch('');
+            onChange(DEFAULT_BROWSE_FILTERS);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:pointer-events-none shrink-0"
+        >
+          <RotateCcw className="w-3 h-3" />
+          Reset
+        </button>
       </div>
 
       <div className="px-4 sm:px-6 py-3 border-b border-zinc-100 dark:border-zinc-800">
@@ -622,14 +606,7 @@ export default function TmdbFilterPanel({ filters, onChange }: TmdbFilterPanelPr
               onClick={() => toggleGroup(group.id)}
               className="w-full flex items-center justify-between gap-3 px-4 sm:px-6 py-3.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
             >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{group.title}</span>
-                <span
-                  className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-medium ${PRIORITY_STYLES[group.priority]}`}
-                >
-                  {group.priority === 'signature' ? 'Signature' : group.priority}
-                </span>
-              </div>
+              <span className="text-sm font-medium">{group.title}</span>
               <ChevronDown
                 className={`w-4 h-4 text-zinc-400 transition-transform ${
                   expandedGroups.has(group.id) ? 'rotate-180' : ''

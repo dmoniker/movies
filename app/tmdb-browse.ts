@@ -36,12 +36,24 @@ export type SortBy =
 
 export type WatchMonetizationType = 'flatrate' | 'free' | 'ads' | 'rent' | 'buy';
 
+/** 1 = mildly under-the-radar → 5 = total unknown but excellent */
+export type ObscurityLevel = 1 | 2 | 3 | 4 | 5;
+
+export type FormatFilter = 'all' | 'animated' | 'liveAction';
+
+export const TMDB_ANIMATION_GENRE_ID = 16;
+
 export interface TmdbBrowseFilters {
   genreIds: number[];
+  formatFilter: FormatFilter;
   releaseWindow: ReleaseWindow;
   minVoteAverage: number;
   minVoteCount: number;
+  obscurityLevel: ObscurityLevel;
   maxRuntime: number | null;
+  underTwoHours: boolean;
+  excludeOlderThanEnabled: boolean;
+  maxMovieAgeYears: number;
   excludeAdult: boolean;
   indieFocus: boolean;
   excludeOscarNomineesAndWinners: boolean;
@@ -56,15 +68,46 @@ export interface TmdbBrowseFilters {
   page: number;
 }
 
+export const OBSCURITY_LABELS: Record<ObscurityLevel, string> = {
+  1: 'Mildly under-the-radar',
+  2: 'Under-the-radar',
+  3: 'Hidden gem',
+  4: 'Deep cut',
+  5: 'Total unknown',
+};
+
+/** Maps obscurity slider to TMDB popularity.lte (lower = more obscure) */
+export const OBSCURITY_MAX_POPULARITY: Record<ObscurityLevel, number> = {
+  1: 25,
+  2: 12,
+  3: 6,
+  4: 3,
+  5: 1.5,
+};
+
+/** Maps obscurity slider to TMDB vote_count.lte (lower = fewer ratings) */
+export const OBSCURITY_MAX_VOTE_COUNT: Record<ObscurityLevel, number> = {
+  1: 3000,
+  2: 1500,
+  3: 800,
+  4: 300,
+  5: 150,
+};
+
 export const DEFAULT_BROWSE_FILTERS: TmdbBrowseFilters = {
   genreIds: [],
-  releaseWindow: '90',
-  minVoteAverage: 6.5,
-  minVoteCount: 100,
+  formatFilter: 'all',
+  releaseWindow: 'all',
+  minVoteAverage: 7.0,
+  minVoteCount: 50,
+  obscurityLevel: 3,
   maxRuntime: null,
+  underTwoHours: false,
+  excludeOlderThanEnabled: false,
+  maxMovieAgeYears: 10,
   excludeAdult: true,
   indieFocus: true,
-  excludeOscarNomineesAndWinners: false,
+  excludeOscarNomineesAndWinners: true,
   oscarExcludeYears: 5,
   excludeSequels: true,
   excludeFranchise: true,
@@ -72,7 +115,7 @@ export const DEFAULT_BROWSE_FILTERS: TmdbBrowseFilters = {
   watchRegion: 'US',
   watchProviderIds: [],
   watchMonetizationTypes: ['flatrate'],
-  sortBy: 'release_date.desc',
+  sortBy: 'vote_average.desc',
   page: 1,
 };
 
@@ -85,16 +128,24 @@ export const RELEASE_WINDOW_OPTIONS: { value: ReleaseWindow; label: string }[] =
 ];
 
 export const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: 'vote_average.desc', label: 'Top rated' },
   { value: 'release_date.desc', label: 'Newest' },
   { value: 'popularity.desc', label: 'Popular' },
-  { value: 'vote_average.desc', label: 'Top rated' },
   { value: 'revenue.desc', label: 'Box office' },
 ];
 
-export const GENRE_OPTIONS = Object.entries(TMDB_GENRE_MAP).map(([id, name]) => ({
-  id: Number(id),
-  name,
-}));
+export const GENRE_OPTIONS = Object.entries(TMDB_GENRE_MAP)
+  .filter(([id]) => Number(id) !== TMDB_ANIMATION_GENRE_ID)
+  .map(([id, name]) => ({
+    id: Number(id),
+    name,
+  }));
+
+export const FORMAT_FILTER_OPTIONS: { value: FormatFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'animated', label: 'Animated' },
+  { value: 'liveAction', label: 'Live action' },
+];
 
 export const WATCH_REGION_OPTIONS: { value: string; label: string }[] = [
   { value: 'US', label: 'United States' },
@@ -138,8 +189,33 @@ export interface FilterField {
 
 export const FILTER_GROUPS: FilterGroup[] = [
   {
+    id: 'gems',
+    title: 'Hidden Gems formula',
+    priority: 'signature',
+    fields: [
+      {
+        key: 'minVoteAverage',
+        label: 'Minimum rating',
+        description: 'Only movies at or above this TMDB score (7.0, 7.5, 8.0+)',
+        type: 'slider',
+        min: 6,
+        max: 9,
+        step: 0.5,
+      },
+      {
+        key: 'minVoteCount',
+        label: 'Min vote count',
+        description: 'Minimum ratings so scores are meaningful — keeps out brand-new hype',
+        type: 'slider',
+        min: 0,
+        max: 500,
+        step: 25,
+      },
+    ],
+  },
+  {
     id: 'hard',
-    title: 'Hard filters',
+    title: 'Exclusions',
     priority: 'core',
     fields: [
       {
@@ -158,21 +234,6 @@ export const FILTER_GROUPS: FilterGroup[] = [
         step: 1,
       },
       {
-        key: 'maxBudgetMillions',
-        label: 'Max budget ($M)',
-        description: 'Indie ceiling — filters after fetch when TMDB provides budget',
-        type: 'slider',
-        min: 0,
-        max: 200,
-        step: 5,
-      },
-      {
-        key: 'releaseWindow',
-        label: 'Release window',
-        description: 'New releases only',
-        type: 'select',
-      },
-      {
         key: 'indieFocus',
         label: 'Exclude major studios',
         description: 'Warner, Disney, Universal, Paramount, etc.',
@@ -189,29 +250,41 @@ export const FILTER_GROUPS: FilterGroup[] = [
         description: 'Sequels, prequels, and collection installments',
         type: 'toggle',
       },
-    ],
-  },
-  {
-    id: 'quality',
-    title: 'Quality signals',
-    priority: 'core',
-    fields: [
       {
-        key: 'minVoteAverage',
-        label: 'Min vote average',
+        key: 'maxBudgetMillions',
+        label: 'Max budget ($M)',
+        description: 'Indie ceiling — filters after fetch when TMDB provides budget',
         type: 'slider',
         min: 0,
-        max: 10,
-        step: 0.5,
+        max: 200,
+        step: 5,
       },
       {
-        key: 'minVoteCount',
-        label: 'Min vote count',
-        description: 'Crowd-verified — avoids hyped-but-unseen titles',
+        key: 'excludeOlderThanEnabled',
+        label: 'Exclude movies older than…',
+        description: 'Only show films released within the year window below',
+        type: 'toggle',
+      },
+      {
+        key: 'maxMovieAgeYears',
+        label: 'Max movie age',
+        description: 'Hide films older than this many years',
         type: 'slider',
-        min: 0,
-        max: 5000,
-        step: 50,
+        min: 1,
+        max: 30,
+        step: 1,
+      },
+      {
+        key: 'underTwoHours',
+        label: 'Under 2 hours only',
+        description: 'Skip epics — max runtime 120 minutes',
+        type: 'toggle',
+      },
+      {
+        key: 'releaseWindow',
+        label: 'Recent releases only',
+        description: 'Optional — narrow to very new titles',
+        type: 'select',
       },
     ],
   },
@@ -221,14 +294,9 @@ export const FILTER_GROUPS: FilterGroup[] = [
     priority: 'core',
     fields: [
       {
-        key: 'genreIds',
-        label: 'Genres',
-        type: 'genres',
-      },
-      {
         key: 'maxRuntime',
         label: 'Max runtime (min)',
-        description: 'Skip epics when you want something shorter',
+        description: 'Custom cap when not using the 2-hour toggle',
         type: 'slider',
         min: 60,
         max: 240,
@@ -275,6 +343,12 @@ export function releaseDateGte(window: ReleaseWindow): string | undefined {
   return date.toISOString().slice(0, 10);
 }
 
+export function releaseDateGteFromYears(years: number): string {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - years);
+  return date.toISOString().slice(0, 10);
+}
+
 export function filtersAreDefault(filters: TmdbBrowseFilters): boolean {
   const { page: _page, ...current } = filters;
   const { page: _defaultPage, ...defaults } = DEFAULT_BROWSE_FILTERS;
@@ -307,5 +381,25 @@ export function mergeBrowseFilters(input: Partial<TmdbBrowseFilters> = {}): Tmdb
       typeof input.oscarExcludeYears === 'number'
         ? Math.min(25, Math.max(1, Math.round(input.oscarExcludeYears)))
         : DEFAULT_BROWSE_FILTERS.oscarExcludeYears,
+    obscurityLevel:
+      typeof input.obscurityLevel === 'number'
+        ? (Math.min(5, Math.max(1, Math.round(input.obscurityLevel))) as ObscurityLevel)
+        : DEFAULT_BROWSE_FILTERS.obscurityLevel,
+    maxMovieAgeYears:
+      typeof input.maxMovieAgeYears === 'number'
+        ? Math.min(30, Math.max(1, Math.round(input.maxMovieAgeYears)))
+        : DEFAULT_BROWSE_FILTERS.maxMovieAgeYears,
+    underTwoHours:
+      typeof input.underTwoHours === 'boolean'
+        ? input.underTwoHours
+        : DEFAULT_BROWSE_FILTERS.underTwoHours,
+    excludeOlderThanEnabled:
+      typeof input.excludeOlderThanEnabled === 'boolean'
+        ? input.excludeOlderThanEnabled
+        : DEFAULT_BROWSE_FILTERS.excludeOlderThanEnabled,
+    formatFilter:
+      input.formatFilter === 'animated' || input.formatFilter === 'liveAction'
+        ? input.formatFilter
+        : DEFAULT_BROWSE_FILTERS.formatFilter,
   };
 }

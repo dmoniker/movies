@@ -6,7 +6,11 @@ import type { TmdbBrowseFilters } from '@/app/tmdb-browse';
 import {
   MAJOR_STUDIO_IDS,
   TMDB_KEYWORDS,
+  OBSCURITY_MAX_POPULARITY,
+  OBSCURITY_MAX_VOTE_COUNT,
+  TMDB_ANIMATION_GENRE_ID,
   releaseDateGte,
+  releaseDateGteFromYears,
 } from '@/app/tmdb-browse';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -122,6 +126,7 @@ function mapListItem(movie: TmdbMovieListItem): Movie {
     voteAverage: movie.vote_average,
     voteCount: movie.vote_count,
     releaseDate: movie.release_date,
+    popularity: movie.popularity,
   };
 }
 
@@ -374,6 +379,38 @@ export async function fetchMovieDetails(movieId: string): Promise<Movie> {
   return mapDetail(data);
 }
 
+interface TmdbVideo {
+  key: string;
+  site: string;
+  type: string;
+  official: boolean;
+  iso_639_1?: string;
+}
+
+interface TmdbVideosResponse {
+  results: TmdbVideo[];
+}
+
+function pickYouTubeTrailerKey(videos: TmdbVideo[]): string | null {
+  const youtube = videos.filter((video) => video.site === 'YouTube');
+  if (youtube.length === 0) return null;
+
+  const trailers = youtube.filter((video) => video.type === 'Trailer');
+  const teasers = youtube.filter((video) => video.type === 'Teaser');
+  const pool = trailers.length > 0 ? trailers : teasers.length > 0 ? teasers : youtube;
+
+  const official = pool.find((video) => video.official);
+  if (official) return official.key;
+
+  const english = pool.find((video) => video.iso_639_1 === 'en');
+  return (english ?? pool[0]).key;
+}
+
+export async function fetchMovieTrailerYouTubeKey(movieId: string): Promise<string | null> {
+  const data = await tmdbFetch<TmdbVideosResponse>(`/movie/${movieId}/videos`);
+  return pickYouTubeTrailerKey(data.results);
+}
+
 export async function fetchDiscoverMovies(
   genreIds: number[],
   excludeIds: Set<string>,
@@ -406,20 +443,50 @@ function buildDiscoverParams(filters: TmdbBrowseFilters): Record<string, string>
     page: String(filters.page),
     include_adult: filters.excludeAdult ? 'false' : 'true',
     'vote_average.gte': String(filters.minVoteAverage),
-    'vote_count.gte': String(filters.minVoteCount),
+    'vote_count.gte': String(
+      Math.min(filters.minVoteCount, OBSCURITY_MAX_VOTE_COUNT[filters.obscurityLevel])
+    ),
+    'popularity.lte': String(OBSCURITY_MAX_POPULARITY[filters.obscurityLevel]),
+    'vote_count.lte': String(OBSCURITY_MAX_VOTE_COUNT[filters.obscurityLevel]),
   };
+
+  const releaseDates: string[] = [];
 
   const releaseGte = releaseDateGte(filters.releaseWindow);
   if (releaseGte) {
-    params['primary_release_date.gte'] = releaseGte;
+    releaseDates.push(releaseGte);
   }
 
-  if (filters.genreIds.length > 0) {
+  if (filters.excludeOlderThanEnabled) {
+    releaseDates.push(releaseDateGteFromYears(filters.maxMovieAgeYears));
+  }
+
+  if (releaseDates.length > 0) {
+    params['primary_release_date.gte'] = releaseDates.sort().reverse()[0];
+  }
+
+  if (filters.formatFilter === 'animated') {
+    const otherGenres = filters.genreIds.filter((id) => id !== TMDB_ANIMATION_GENRE_ID);
+    params.with_genres =
+      otherGenres.length > 0
+        ? [TMDB_ANIMATION_GENRE_ID, ...otherGenres].join(',')
+        : String(TMDB_ANIMATION_GENRE_ID);
+  } else if (filters.genreIds.length > 0) {
     params.with_genres = filters.genreIds.join('|');
   }
 
-  if (filters.maxRuntime !== null) {
-    params['with_runtime.lte'] = String(filters.maxRuntime);
+  if (filters.formatFilter === 'liveAction') {
+    params.without_genres = String(TMDB_ANIMATION_GENRE_ID);
+  }
+
+  const runtimeCap = filters.underTwoHours
+    ? 120
+    : filters.maxRuntime !== null
+      ? filters.maxRuntime
+      : null;
+
+  if (runtimeCap !== null) {
+    params['with_runtime.lte'] = String(runtimeCap);
   }
 
   if (filters.indieFocus) {
