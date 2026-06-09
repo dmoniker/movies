@@ -110,7 +110,7 @@ export default function HiddenGemsApp() {
             <span className="text-white text-xl sm:text-2xl">💎</span>
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">Hidden Gems</h1>
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight truncate">Hidden Gem Movies</h1>
             <p className="text-xs sm:text-sm text-zinc-500 truncate">High quality • Low visibility</p>
           </div>
         </div>
@@ -309,7 +309,14 @@ export default function HiddenGemsApp() {
       </main>
 
       <footer className="border-t border-zinc-200 dark:border-zinc-800 py-6 px-4 text-center text-xs text-zinc-400 mt-10">
-        Hidden Gems • Movie data from TMDB
+        <a
+          href="https://hiddengemmovies.com"
+          className="text-violet-600 hover:underline dark:text-violet-400"
+        >
+          hiddengemmovies.com
+        </a>
+        {' '}
+        • Movie data from TMDB
       </footer>
     </div>
   );

@@ -12,9 +12,35 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = 'https://hiddengemmovies.com';
+
 export const metadata: Metadata = {
-  title: "Hidden Gems",
-  description: "Discover high-rated, low-visibility movies by genre — the classic hidden gem formula.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: 'Hidden Gem Movies',
+    template: '%s | Hidden Gem Movies',
+  },
+  description:
+    'Discover high-rated, low-visibility movies by genre — the classic hidden gem formula.',
+  applicationName: 'Hidden Gem Movies',
+  openGraph: {
+    title: 'Hidden Gem Movies',
+    description:
+      'Discover high-rated, low-visibility movies by genre — the classic hidden gem formula.',
+    url: siteUrl,
+    siteName: 'Hidden Gem Movies',
+    type: 'website',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Hidden Gem Movies',
+    description:
+      'Discover high-rated, low-visibility movies by genre — the classic hidden gem formula.',
+  },
+  alternates: {
+    canonical: '/',
+  },
 };
 
 export const viewport = {
