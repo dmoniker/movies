@@ -24,6 +24,7 @@ export default function HiddenGemsApp() {
   const [browsePrefsLoaded, setBrowsePrefsLoaded] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [apiConfig, setApiConfig] = useState<ApiConfig>({ tmdb: false });
+  const [apiConfigLoaded, setApiConfigLoaded] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,7 +41,8 @@ export default function HiddenGemsApp() {
     setBrowsePrefsLoaded(true);
     fetchApiConfig()
       .then(setApiConfig)
-      .catch(() => setApiConfig({ tmdb: false }));
+      .catch(() => setApiConfig({ tmdb: false }))
+      .finally(() => setApiConfigLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -53,6 +55,7 @@ export default function HiddenGemsApp() {
   }, [browseFilters, browsePrefsLoaded]);
 
   useEffect(() => {
+    if (!apiConfigLoaded) return;
     if (!apiConfig.tmdb) {
       setCatalogError('Hidden Gems needs a TMDB API key configured on the server.');
       return;
@@ -96,7 +99,7 @@ export default function HiddenGemsApp() {
       clearTimeout(debounceTimer);
       if (loadingTimer) clearTimeout(loadingTimer);
     };
-  }, [apiConfig.tmdb, browseFilters, browsePrefsLoaded]);
+  }, [apiConfig.tmdb, apiConfigLoaded, browseFilters, browsePrefsLoaded]);
 
   const updateFilters = (patch: Partial<TmdbBrowseFilters>) => {
     setBrowseFilters((prev) => ({ ...prev, ...patch, page: 1 }));
